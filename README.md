@@ -19,7 +19,6 @@ By flashing this kernel, **YOU** are choosing to make these modifications. If so
 [GKI](https://github.com/WildKernels/GKI_KernelSU_SUSFS)  
 [Sultan](https://github.com/WildKernels/Sultan_KernelSU_SUSFS)  
 [OnePlus](https://github.com/WildKernels/OnePlus_KernelSU_SUSFS)  
-[Legacy Pixels](https://github.com/WildKernels/Pixel_KernelSU_SUSFS)  
 
 ---
 
@@ -27,7 +26,7 @@ By flashing this kernel, **YOU** are choosing to make these modifications. If so
 
 [Kernel Patches](https://github.com/WildKernels/kernel_patches)  
 [Old Build Scripts](https://github.com/TheWildJames/kernel_build_scripts)  
-[Horizon Kernel Flasher](https://github.com/libxzr/HorizonKernelFlasher)  
+[Kernel Flasher](https://github.com/fatalcoder524/KernelFlasher)  
 
 ---
 
@@ -35,9 +34,6 @@ By flashing this kernel, **YOU** are choosing to make these modifications. If so
 
 Follow the steps for GKI:  
 [Installation](https://kernelsu.org/guide/installation.html)
-
-To get boot.img format:  
-[Get My Kernel Format](https://github.com/TheWildJames/Get_My_Kernel_Format)
 
 ---
 
@@ -52,7 +48,7 @@ To get boot.img format:
 
 - **KernelSU**: Developed by [tiann](https://github.com/tiann/KernelSU).
 - **KernelSU-Next**: Developed by [rifsxd](https://github.com/KernelSU-Next/KernelSU-Next).
-- **Magic-KSU**: Developed by [5ec1cff](https://github.com/5ec1cff/KernelSU).  
+- **Magic-KSU**: Developed by [5ec1cff](https://github.com/5ec1cff/KernelSU).
 - **SUSFS**: Developed by [simonpunk](https://gitlab.com/simonpunk/susfs4ksu.git).
 - **SUSFS Module**: Developed by [sidex15](https://github.com/sidex15).
 - **Sultan Kernels**: Developed by [kerneltoast](https://github.com/kerneltoast).
