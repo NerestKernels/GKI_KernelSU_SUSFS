@@ -1,4 +1,4 @@
-# Wild Kernels for Android
+# Nerest Kernels for Android
 
 ## Your warranty is no longer valid!
 
@@ -16,7 +16,7 @@ By flashing this kernel, **YOU** are choosing to make these modifications. If so
 
 # Kernels:
  
-[GKI](https://github.com/WildKernels/GKI_KernelSU_SUSFS)  
+[GKI](https://github.com/NerestKernels/GKI_KernelSU_SUSFS)  
 [Sultan](https://github.com/WildKernels/Sultan_KernelSU_SUSFS)  
 [OnePlus](https://github.com/WildKernels/OnePlus_KernelSU_SUSFS)  
 
@@ -24,7 +24,7 @@ By flashing this kernel, **YOU** are choosing to make these modifications. If so
 
 # Other Links:
 
-[Kernel Patches](https://github.com/WildKernels/kernel_patches)  
+[Kernel Patches](https://github.com/TheFloresto/kernel_patches)  
 [Old Build Scripts](https://github.com/TheWildJames/kernel_build_scripts)  
 [Kernel Flasher](https://github.com/fatalcoder524/KernelFlasher)  
 
@@ -71,8 +71,8 @@ Flashing this kernel will void your warranty, and there is always a risk of bric
 
 ---
 
-[Telegram](https://t.me/TheWildJames)  
-[Telegram Group](https://t.me/Wild_Kernels)  
+[Telegram](https://t.me/NoFloresto)  
+[Telegram Group](https://t.me/NerestKernels)  
 
 # Special thanks to the following people for their contributions!
 This helps me alot! <3
