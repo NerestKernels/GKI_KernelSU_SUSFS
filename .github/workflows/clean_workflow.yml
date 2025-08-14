@@ -1,10 +1,20 @@
-name: 清理仓库工作流
+name: Очистка релизов и тегов
 
 on:
   workflow_dispatch:
     inputs:
+      clean_target:
+        description: "Что очищать:"
+        required: true
+        type: choice
+        default: 'releases'
+        options:
+          - 'releases'
+          - 'prereleases'
+          - 'tags'
+          - 'all'
       clean_mode:
-        description: "清理模式(amount--保留数量, date--保留天数)："
+        description: "Режим очистки (amount--по количеству, date--по дате):"
         required: true
         type: choice
         default: 'amount'
@@ -12,25 +22,25 @@ on:
           - 'amount'
           - 'date'
       clean_to_keep:
-        description: "保留最近工作流的天数/数量："
+        description: "Количество для сохранения / дней назад:"
         required: true
         type: string
-        default: "0"
+        default: "5"
 
 jobs:
-  clean-workflows:
+  clean-repository:
     runs-on: ubuntu-latest
     permissions:
-      actions: write
-      contents: read
+      contents: write
+      actions: read
 
     steps:
-      - name: 检出当前仓库
+      - name: Проверка репозитория
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           
-      - name: 安装GitHub CLI
+      - name: Установка GitHub CLI
         run: |
           sudo apt-mark hold firefox
           sudo apt-mark hold libc-bin
@@ -41,46 +51,148 @@ jobs:
           gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
           gh --version
 
-      - name: 按保留数量清理工作流
-        if: ${{ github.event.inputs.clean_mode == 'amount' }}
+      - name: Очистка релизов по количеству
+        if: ${{ (github.event.inputs.clean_target == 'releases' || github.event.inputs.clean_target == 'all') && github.event.inputs.clean_mode == 'amount' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           repo_full_name=$GITHUB_REPOSITORY
-          # 获取所有工作流（按创建时间倒序）
-          all_workflows=$(gh api -X GET "repos/$repo_full_name/actions/runs?per_page=100" | 
-            jq --arg current_run "$GITHUB_RUN_ID" '.workflow_runs | map(select(.id != ($current_run | tonumber)))')
-          # 计算实际需要保留的工作流数量
-          total_workflows=$(echo "$all_workflows" | jq length)
-          keep_count=$(( ${{ github.event.inputs.clean_to_keep }} < total_workflows ? ${{ github.event.inputs.clean_to_keep }} : total_workflows ))
-          # 获取要保留的最新工作流ID
-          keep_ids=$(echo "$all_workflows" | 
-            jq -r 'sort_by(.created_at) | reverse | .[0:'$keep_count'] | .[].id')
-          echo "保留最近 $keep_count 个工作流 (ID: $keep_ids)"
-          # 删除不在保留列表中的工作流
-          echo "$all_workflows" | jq -r '.[] | select(.status != "in_progress" and .status != "queued") | .id' | while read id; do
-            if ! grep -qw "$id" <<< "$keep_ids"; then
-              echo "删除工作流 $id"
-              gh api -X DELETE "repos/$repo_full_name/actions/runs/$id" --silent
+          echo "Получение списка релизов..."
+          
+          # Получаем все релизы (исключая пре-релизы)
+          all_releases=$(gh api -X GET "repos/$repo_full_name/releases?per_page=100" | 
+            jq '[.[] | select(.prerelease == false)]')
+          
+          total_releases=$(echo "$all_releases" | jq length)
+          keep_count=$(( ${{ github.event.inputs.clean_to_keep }} < total_releases ? ${{ github.event.inputs.clean_to_keep }} : total_releases ))
+          
+          echo "Найдено $total_releases релизов, сохраняем последние $keep_count"
+          
+          # Получаем ID релизов для удаления
+          to_delete=$(echo "$all_releases" | 
+            jq -r 'sort_by(.created_at) | reverse | .['$keep_count':] | .[].id')
+          
+          for release_id in $to_delete; do
+            release_name=$(echo "$all_releases" | jq -r ".[] | select(.id == $release_id) | .tag_name")
+            echo "Удаляем релиз: $release_name (ID: $release_id)"
+            gh api -X DELETE "repos/$repo_full_name/releases/$release_id" --silent
+          done
+
+      - name: Очистка пре-релизов по количеству
+        if: ${{ (github.event.inputs.clean_target == 'prereleases' || github.event.inputs.clean_target == 'all') && github.event.inputs.clean_mode == 'amount' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          repo_full_name=$GITHUB_REPOSITORY
+          echo "Получение списка пре-релизов..."
+          
+          # Получаем все пре-релизы
+          all_prereleases=$(gh api -X GET "repos/$repo_full_name/releases?per_page=100" | 
+            jq '[.[] | select(.prerelease == true)]')
+          
+          total_prereleases=$(echo "$all_prereleases" | jq length)
+          keep_count=$(( ${{ github.event.inputs.clean_to_keep }} < total_prereleases ? ${{ github.event.inputs.clean_to_keep }} : total_prereleases ))
+          
+          echo "Найдено $total_prereleases пре-релизов, сохраняем последние $keep_count"
+          
+          # Получаем ID пре-релизов для удаления
+          to_delete=$(echo "$all_prereleases" | 
+            jq -r 'sort_by(.created_at) | reverse | .['$keep_count':] | .[].id')
+          
+          for release_id in $to_delete; do
+            release_name=$(echo "$all_prereleases" | jq -r ".[] | select(.id == $release_id) | .tag_name")
+            echo "Удаляем пре-релиз: $release_name (ID: $release_id)"
+            gh api -X DELETE "repos/$repo_full_name/releases/$release_id" --silent
+          done
+
+      - name: Очистка тегов по количеству
+        if: ${{ (github.event.inputs.clean_target == 'tags' || github.event.inputs.clean_target == 'all') && github.event.inputs.clean_mode == 'amount' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          repo_full_name=$GITHUB_REPOSITORY
+          echo "Получение списка тегов..."
+          
+          # Получаем все теги
+          all_tags=$(gh api -X GET "repos/$repo_full_name/tags?per_page=100" | jq -r '.[].name')
+          total_tags=$(echo "$all_tags" | wc -l)
+          keep_count=$(( ${{ github.event.inputs.clean_to_keep }} < total_tags ? ${{ github.event.inputs.clean_to_keep }} : total_tags ))
+          
+          echo "Найдено $total_tags тегов, сохраняем последние $keep_count"
+          
+          # Получаем теги для удаления (пропускаем первые keep_count)
+          to_delete_tags=$(echo "$all_tags" | tail -n +$((keep_count + 1)))
+          
+          for tag in $to_delete_tags; do
+            if [ ! -z "$tag" ]; then
+              echo "Удаляем тег: $tag"
+              git push --delete origin "$tag" 2>/dev/null || echo "Не удалось удалить тег $tag"
             fi
           done
 
-
-      - name: 按保留天数清理工作流
-        if: ${{ github.event.inputs.clean_mode == 'date'}}
+      - name: Очистка релизов по дате
+        if: ${{ (github.event.inputs.clean_target == 'releases' || github.event.inputs.clean_target == 'all') && github.event.inputs.clean_mode == 'date' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           repo_full_name=$GITHUB_REPOSITORY
           cutoff_date=$(date -d "${{ github.event.inputs.clean_to_keep }} days ago" -u +"%Y-%m-%dT%H:%M:%SZ")
-          echo "删除 $cutoff_date 之前的所有工作流..."
+          echo "Удаление релизов старше $cutoff_date..."
           
-          # 获取需要删除的工作流ID
-          to_delete_ids=$(gh api -X GET "repos/$repo_full_name/actions/runs?created=<$cutoff_date&per_page=100" | 
-            jq -r --arg current_run "$GITHUB_RUN_ID" '.workflow_runs[] | 
-            select(.id != ($current_run | tonumber) and .status != "in_progress" and .status != "queued") | .id')
+          # Получаем релизы старше указанной даты
+          old_releases=$(gh api -X GET "repos/$repo_full_name/releases?per_page=100" | 
+            jq -r --arg cutoff "$cutoff_date" '.[] | select(.prerelease == false and .created_at < $cutoff) | .id')
           
-          for id in $to_delete_ids; do
-            echo "删除工作流 $id (创建于 $cutoff_date 之前)"
-            gh api -X DELETE "repos/$repo_full_name/actions/runs/$id" --silent
+          for release_id in $old_releases; do
+            release_info=$(gh api -X GET "repos/$repo_full_name/releases/$release_id")
+            release_name=$(echo "$release_info" | jq -r '.tag_name')
+            release_date=$(echo "$release_info" | jq -r '.created_at')
+            echo "Удаляем релиз: $release_name (создан: $release_date)"
+            gh api -X DELETE "repos/$repo_full_name/releases/$release_id" --silent
           done
+
+      - name: Очистка пре-релизов по дате
+        if: ${{ (github.event.inputs.clean_target == 'prereleases' || github.event.inputs.clean_target == 'all') && github.event.inputs.clean_mode == 'date' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          repo_full_name=$GITHUB_REPOSITORY
+          cutoff_date=$(date -d "${{ github.event.inputs.clean_to_keep }} days ago" -u +"%Y-%m-%dT%H:%M:%SZ")
+          echo "Удаление пре-релизов старше $cutoff_date..."
+          
+          # Получаем пре-релизы старше указанной даты
+          old_prereleases=$(gh api -X GET "repos/$repo_full_name/releases?per_page=100" | 
+            jq -r --arg cutoff "$cutoff_date" '.[] | select(.prerelease == true and .created_at < $cutoff) | .id')
+          
+          for release_id in $old_prereleases; do
+            release_info=$(gh api -X GET "repos/$repo_full_name/releases/$release_id")
+            release_name=$(echo "$release_info" | jq -r '.tag_name')
+            release_date=$(echo "$release_info" | jq -r '.created_at')
+            echo "Удаляем пре-релиз: $release_name (создан: $release_date)"
+            gh api -X DELETE "repos/$repo_full_name/releases/$release_id" --silent
+          done
+
+      - name: Очистка тегов по дате
+        if: ${{ (github.event.inputs.clean_target == 'tags' || github.event.inputs.clean_target == 'all') && github.event.inputs.clean_mode == 'date' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          repo_full_name=$GITHUB_REPOSITORY
+          cutoff_date=$(date -d "${{ github.event.inputs.clean_to_keep }} days ago" -u +"%Y-%m-%dT%H:%M:%SZ")
+          echo "Удаление тегов старше $cutoff_date..."
+          
+          # Получаем информацию о тегах с датами коммитов
+          git for-each-ref --format="%(refname:short) %(committerdate:iso8601)" refs/tags | while read tag_name tag_date; do
+            if [[ "$tag_date" < "$cutoff_date" ]]; then
+              echo "Удаляем тег: $tag_name (дата коммита: $tag_date)"
+              git push --delete origin "$tag_name" 2>/dev/null || echo "Не удалось удалить тег $tag_name"
+            fi
+          done
+
+      - name: Сводка операций
+        run: |
+          echo "### Операция очистки завершена ✅" >> $GITHUB_STEP_SUMMARY
+          echo "- **Цель очистки:** ${{ github.event.inputs.clean_target }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Режим:** ${{ github.event.inputs.clean_mode }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Параметр:** ${{ github.event.inputs.clean_to_keep }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Время выполнения:** $(date)" >> $GITHUB_STEP_SUMMARY
