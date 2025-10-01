@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🔥 Nerest Kernels for Android
+# 🌟 GKI Kernels for Android
 
 [![KernelSU](https://img.shields.io/badge/KernelSU-Supported-green)](https://kernelsu.org/)
 [![SUSFS](https://img.shields.io/badge/SUSFS-Integrated-orange)](https://gitlab.com/simonpunk/susfs4ksu)
@@ -9,11 +9,11 @@
 
 ## ⚠️ Your warranty is no longer valid!
 
-I am **not responsible** for bricked devices, damaged hardware, or any issues that arise from using this kernel.
+I am **not responsible** for bricked devices, damaged hardware, or any issues that from using this kernel.
 
 **Please** do thorough research and fully understand the features included in this kernel before flashing it!
 
-By flashing this kernel, **YOU** are choosing to make these modifications. If something goes wrong, **do not blame me**!
+By flashing this kernel, **YOU ARE CHOOSING TO MAKE THESE MODIFICATONS**. If something goes wrong, **do not blame me**!
 
 ---
 
@@ -26,16 +26,14 @@ By flashing this kernel, **YOU** are choosing to make these modifications. If so
 | Kernel | Repository | Status |
 |--------|------------|--------|
 | 🏗️ **GKI** | [GKI_KernelSU_SUSFS](https://github.com/NerestKernels/GKI_KernelSU_SUSFS) | ✅ Active |
-| 👑 **Sultan** | [Sultan_KernelSU_SUSFS](https://github.com/NerestKernels/Sultan_KernelSU_SUSFS) | ✅ Active |
+| 👑 **Sultan** | [Sultan_KernelSU_SUSFS](https://github.com/NerestKernels/Sultan_KernelSU_SUSFS) | 🛑 Not active |
 | 📱 **OnePlus** | [OnePlus_KernelSU_SUSFS](https://github.com/NerestKernels/OnePlus_KernelSU_SUSFS) | ✅ Active |
-
----
 
 ## 🔗 Additional Resources
 
-- 🩹 [Kernel Patches](https://github.com/NerestKernels/kernel_patches)
-- 📜 [Old Build Scripts](https://github.com/TheWildJames/kernel_build_scripts)
-- ⚡ [Kernel Flasher](https://github.com/fatalcoder524/KernelFlasher)
+- 🩹 [Kernel Patches](https://github.com/TheFloresto/kernel_patches)
+- ⚡ [Kernel Flasher 1](https://github.com/fatalcoder524/KernelFlasher)
+- 💤 [Kernel Flasher 2](https://github.com/libxzr/HorizonKernelFlasher)
 
 ---
 
@@ -59,6 +57,8 @@ For GKI installation, please follow the official guide:
 - 🔐 **KernelSU**: Developed by [tiann](https://github.com/tiann/KernelSU)
 - 🚀 **KernelSU-Next**: Developed by [rifsxd](https://github.com/KernelSU-Next/KernelSU-Next)
 - ✨ **Magic-KSU**: Developed by [5ec1cff](https://github.com/5ec1cff/KernelSU)
+- 🌴 **Wild-KSU** Developed by [TheWildJames](https://github.com/WildKernels/Wild_KSU)
+- 🎀 **SukiSU-Ultra** Developed by [ShirkNeko](https://github.com/SukiSU-Ultra/SukiSU-Ultra)
 - 🛡️ **SUSFS**: Developed by [simonpunk](https://gitlab.com/simonpunk/susfs4ksu.git)
 - 📦 **SUSFS Module**: Developed by [sidex15](https://github.com/sidex15)
 - 👑 **Sultan Kernels**: Developed by [kerneltoast](https://github.com/kerneltoast)
@@ -105,8 +105,5 @@ Flashing this kernel will void your warranty, and there is always a risk of bric
 |-------------|-------------|
 | 🛡️ [simonpunk](https://gitlab.com/simonpunk/susfs4ksu.git) | Created SUSFS! |
 | 📦 [sidex15](https://github.com/sidex15) | Created module! |
-| 🩹 [backslashxx](https://github.com/backslashxx) | Helped with patches! |
-| 🔧 [Teemo](https://github.com/liqideqq) | Helped with patches! |
-| 💝 [幕落](https://github.com/MuLuo688) | Donation! |
 
 *If you have contributed and are not listed here, please remind me!* 🙏
