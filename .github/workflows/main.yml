@@ -36,7 +36,7 @@ on:
       brand_name:
         description: "Kernel Branding"
         type: string
-        default: Wild
+        default: TheFloresto
       commit_mode:
         description: "latest = branch tips, verified = audited pins, update = build latest then promote verified pins on success"
         required: false
