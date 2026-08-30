@@ -466,7 +466,7 @@ jobs:
         clear_stats: true
 
     - name: Initialize Config Fragment
-      run: touch "${{ github.workspace }}/wild_gki.fragment"
+      run: touch "${{ github.workspace }}/thefloresto.fragment"
 
     - name: Apply Kernel Bypass Hack
       if: ${{ inputs.bypass == 'true' }}
