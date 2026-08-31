@@ -38,3 +38,12 @@ runs:
           exit 1
         fi
         echo "Bypass hack applied to $TARGET_FILE"
+
+    - name: 'Patch AnyKernel3 for Bypass Hack'
+      shell: bash
+      if: inputs.bypass
+      working-directory: ${{ github.workspace }}/AnyKernel3
+      run: |
+        set -euo pipefail
+        cp ${{ github.action_path }}/patches/bypass.patch "${{ github.workspace }}/AnyKernel3/bypass.patch"
+        patch -p1 < bypass.patch
