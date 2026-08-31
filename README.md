@@ -2,7 +2,7 @@
 
 # 🔥 GKI_KernelSU_SUSFS 🔥
 [![Build Kernel](https://img.shields.io/github/actions/workflow/status/NerestKernels/GKI_KernelSU_SUSFS/build-kernel-release.yml?label=Latest%20Release%20status&style=flat-square)](https://github.com/NerestKernels/GKI_KernelSU_SUSFS/actions/workflows/build-kernel-release.yml)
-[![GitHub Release](https://img.shields.io/github/v/release/sakfi/OP_KSUN_FS?label=release&color=blue)](https://github.com/sakfi/GKI_KernelSU_SUSFS/releases/latest)
+[![GitHub Release](https://img.shields.io/github/v/release/NerestKernels/GKI_KernelSU_SUSFS?label=release&color=blue)](https://github.com/sakfi/GKI_KernelSU_SUSFS/releases/latest)
 [![Forks](https://badgen.net/github/forks/NerestKernels/GKI_KernelSU_SUSFS?color=orange)](https://github.com/NerestKernels/GKI_KernelSU_SUSFS/network/members)
 [![Stars](https://badgen.net/github/stars/NerestKernels/GKI_KernelSU_SUSFS?color=yellow)](https://github.com/NerestKernels/GKI_KernelSU_SUSFS/stargazers)
 
