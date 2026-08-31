@@ -16,7 +16,7 @@ runs:
   using: composite
   steps:
     - name: Activate Bypass
-      if: ${{ inputs.bypass == 'true' }}
+      if: inputs.bypass
       shell: bash
       working-directory: ${{ github.workspace }}/kernel
       run: |
