@@ -55,7 +55,7 @@ on:
         description: "Kernel branding text appended to the version string"
         required: false
         type: string
-        default: Wild
+        default: TheFloresto
       bypass:
         description: "Apply the kernel version-check bypass hack (disabled by default)"
         required: false
