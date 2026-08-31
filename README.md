@@ -37,7 +37,7 @@ Flashing this kernel will not void your warranty, but there is always a risk of 
 
 <br>
 
-> **⚠️ Verify compatibility of your device and OxygenOS version before flashing.**
+> **⚠️ Verify compatibility of your device before flashing.**
 
 
 <div align="center">
