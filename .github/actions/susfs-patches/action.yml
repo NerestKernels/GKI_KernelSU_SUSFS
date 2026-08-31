@@ -145,15 +145,6 @@ runs:
       run: |
         patch -p1 < 50_add_susfs_in_gki-${{ inputs.version }}.patch
 
-        # SUSFS v2.2.0's 6.12 patch still passes the removed third argument
-        # to getname_flags(). Android 16 / Linux 6.12 exposes the modern
-        # two-argument declaration, so normalize the generated open.c after
-        # applying the upstream SUSFS patch.
-        if [[ "${{ inputs.version }}" == "android16-6.12" ]]; then
-          sed -i 's/getname_flags(filename, lookup_flags, NULL)/getname_flags(filename, lookup_flags)/g' fs/open.c
-          echo "Fixed SUSFS getname_flags() call for Android 16 6.12"
-        fi
-
         # SUSFS's OPEN_REDIRECT code unconditionally calls VMA_PAD_START(), which
         # only exists on GKI branches that carry Google's page-size-migration
         # feature (added to each android version's kernel/common branch at a
@@ -185,9 +176,9 @@ runs:
         # Fix getname_flags() arity for 6.12: SUSFS patch emits 3-arg
         # getname_flags(filename, lookup_flags, NULL) but 6.12 fs.h declares
         # only 2-arg getname_flags(const char *, int). Drop the trailing NULL.
-        #if [[ "${{ inputs.version }}" == "android16-6.12" ]]; then
-        #  if grep -q 'getname_flags(filename, lookup_flags, NULL)' fs/open.c; then
-        #    echo "Fixing getname_flags 3-arg -> 2-arg for 6.12"
-        #    sed -i 's/getname_flags(filename, lookup_flags, NULL)/getname_flags(filename, lookup_flags)/g' fs/open.c
-        #  fi
-        #fi
+        if [[ "${{ inputs.version }}" == "android16-6.12" ]]; then
+          if grep -q 'getname_flags(filename, lookup_flags, NULL)' fs/open.c; then
+            echo "Fixing getname_flags 3-arg -> 2-arg for 6.12"
+            sed -i 's/getname_flags(filename, lookup_flags, NULL)/getname_flags(filename, lookup_flags)/g' fs/open.c
+          fi
+        fi
