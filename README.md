@@ -194,11 +194,11 @@ These amazing people help make this project possible! ❤️
 
 ## Star History
 
-<a href="https://www.star-history.com/?type=date&repos=TheFloresto%GKI_KernelSU_SUSFS">
+<a href="https://www.star-history.com/?type=date&repos=NerestKernels%GKI_KernelSU_SUSFS">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=TheFloresto/GKI_KernelSU_SUSFS&type=date&theme=dark&legend=top-left&sealed_token=OqU8hyY-HqHndwkuxd2blk0WdhhDe3ZkdTTdzboTaSuVsHGw5kHTBOzIbAL5QD1oF7AVbYqsAx4Or54KGWQAb_oFrXwxZwX8-KwET_R6670813YeSA-i_F-NIqtYnXz73JnL2tRYWBaSXGGog1iJrZlGRyfo5bfTJ1Y8_OdlYIplGNpnlDr4DbcK4ouq" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=TheFloresto/GKI_KernelSU_SUSFS&type=date&legend=top-left&sealed_token=OqU8hyY-HqHndwkuxd2blk0WdhhDe3ZkdTTdzboTaSuVsHGw5kHTBOzIbAL5QD1oF7AVbYqsAx4Or54KGWQAb_oFrXwxZwX8-KwET_R6670813YeSA-i_F-NIqtYnXz73JnL2tRYWBaSXGGog1iJrZlGRyfo5bfTJ1Y8_OdlYIplGNpnlDr4DbcK4ouq" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=TheFloresto/GKI_KernelSU_SUSFS&type=date&legend=top-left&sealed_token=OqU8hyY-HqHndwkuxd2blk0WdhhDe3ZkdTTdzboTaSuVsHGw5kHTBOzIbAL5QD1oF7AVbYqsAx4Or54KGWQAb_oFrXwxZwX8-KwET_R6670813YeSA-i_F-NIqtYnXz73JnL2tRYWBaSXGGog1iJrZlGRyfo5bfTJ1Y8_OdlYIplGNpnlDr4DbcK4ouq" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=NerestKernels/GKI_KernelSU_SUSFS&type=date&theme=dark&legend=top-left&sealed_token=OqU8hyY-HqHndwkuxd2blk0WdhhDe3ZkdTTdzboTaSuVsHGw5kHTBOzIbAL5QD1oF7AVbYqsAx4Or54KGWQAb_oFrXwxZwX8-KwET_R6670813YeSA-i_F-NIqtYnXz73JnL2tRYWBaSXGGog1iJrZlGRyfo5bfTJ1Y8_OdlYIplGNpnlDr4DbcK4ouq" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=NerestKernels/GKI_KernelSU_SUSFS&type=date&legend=top-left&sealed_token=OqU8hyY-HqHndwkuxd2blk0WdhhDe3ZkdTTdzboTaSuVsHGw5kHTBOzIbAL5QD1oF7AVbYqsAx4Or54KGWQAb_oFrXwxZwX8-KwET_R6670813YeSA-i_F-NIqtYnXz73JnL2tRYWBaSXGGog1iJrZlGRyfo5bfTJ1Y8_OdlYIplGNpnlDr4DbcK4ouq" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=NerestKernels/GKI_KernelSU_SUSFS&type=date&legend=top-left&sealed_token=OqU8hyY-HqHndwkuxd2blk0WdhhDe3ZkdTTdzboTaSuVsHGw5kHTBOzIbAL5QD1oF7AVbYqsAx4Or54KGWQAb_oFrXwxZwX8-KwET_R6670813YeSA-i_F-NIqtYnXz73JnL2tRYWBaSXGGog1iJrZlGRyfo5bfTJ1Y8_OdlYIplGNpnlDr4DbcK4ouq" />
  </picture>
 </a>
 
