@@ -469,7 +469,7 @@ jobs:
       run: touch "${{ github.workspace }}/thefloresto.fragment"
 
     - name: Apply Kernel Bypass Hack
-      if: false
+      if: inputs.bypass
       uses: ./.github/actions/bypass-kernel
       with:
         version: ${{ inputs.version }}
