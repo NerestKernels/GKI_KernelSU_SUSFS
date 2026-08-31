@@ -1,0 +1,28 @@
+name: Download .github folder
+permissions:
+  contents: write
+  actions: write
+
+on:
+  workflow_dispatch:
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download .github from TheFloresto/GKI_KernelSU_SUSFSssssss @ GOOO
+        run: |
+          git clone --depth=1 --branch main \
+            https://github.com/NerestKernels/GKI_KernelSU_SUSFSssssss.git \
+            source_repo
+
+          mkdir -p github_downloaded
+          cp -r source_repo/.github/. github_downloaded/
+          ls -la github_downloaded/
+
+      - name: Upload .github as artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: github-folder
+          path: github_downloaded/
+          compression-level: 9
