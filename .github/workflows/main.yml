@@ -961,7 +961,11 @@ jobs:
     - publish-manager-artifacts
 
     env:
-      GH_TOKEN: ${{ github.token }}
+      # Use RELEASE_TOKEN so releases are created in the target repository
+      GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+      RELEASE_NOTES: .github/config/RELEASE_NOTES.md
+      # Target repository for tags + releases
+      RELEASE_REPO: NerestKernels/GKI_KernelSU_SUSFS
     outputs:
       new_tag: ${{ steps.tag.outputs.new_tag }}
     steps:
@@ -1020,7 +1024,8 @@ jobs:
       id: tag
       if: inputs.release_type != 'Action'
       run: |
-        mapfile -t RELEASE_TAGS < <(gh api --paginate "repos/${{ github.repository }}/tags?per_page=100" --jq '.[].name' 2>/dev/null | grep -E '^r[0-9]+$' || true)
+        # Look up existing rN tags in the *target* release repository
+        mapfile -t RELEASE_TAGS < <(gh api --paginate "repos/${RELEASE_REPO}/tags?per_page=100" --jq '.[].name' 2>/dev/null | grep -E '^r[0-9]+$' || true)
 
         LATEST_REV=0
         for TAG in "${RELEASE_TAGS[@]}"; do
@@ -1037,9 +1042,9 @@ jobs:
         fi
 
         if [[ ${#RELEASE_TAGS[@]} -gt 0 ]]; then
-          echo "Latest r-tag: r${LATEST_REV}"
+          echo "Latest r-tag in ${RELEASE_REPO}: r${LATEST_REV}"
         else
-          echo "No existing r-tags found; starting at r1"
+          echo "No existing r-tags found in ${RELEASE_REPO}; starting at r1"
         fi
         echo "New tag: $NEW_TAG"
         echo "NEW_TAG=${NEW_TAG}" >> $GITHUB_ENV
@@ -1180,13 +1185,13 @@ jobs:
 
         def build_preamble():
             return (
-                "# Wild Kernels for GKI2 Devices\n\n"
+                "# Nerest Kernels for GKI2 Devices\n\n"
                 "> [!CAUTION]\n"
                 "> This software is provided for testing and educational purposes only. "
                 "Use at your own risk. The developers are not responsible for any damage, "
                 "data loss, or issues that may occur. Please ensure you have proper backups "
                 "before installation.\n\n"
-                "Join the Telegram group: <https://t.me/WildKernelsTG>\n\n"
+                "Join the Telegram group: <https://t.me/NerestKernels>\n\n"
                 "---\n\n"
             )
 
@@ -1363,7 +1368,7 @@ jobs:
       uses: actions/download-artifact@v7
       with:
         path: release-assets
-        pattern: '*-AnyKernel3'
+        pattern: '*-AK3'
         merge-multiple: false
 
     - name: Download NoMount metamodule
@@ -1379,7 +1384,7 @@ jobs:
         set -e
         shopt -s nullglob
 
-        for dir in release-assets/*-AnyKernel3; do
+        for dir in release-assets/*-AK3; do
           zip_name="${dir}.zip"
           rm -f "$zip_name"
           cd "$dir"
@@ -1403,6 +1408,9 @@ jobs:
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
+        # Publish into the separate NerestKernels repository using RELEASE_TOKEN
+        token: ${{ secrets.RELEASE_TOKEN }}
+        repository: ${{ env.RELEASE_REPO }}
         tag_name: ${{ steps.tag.outputs.new_tag }}
         name: ${{ steps.release_meta.outputs.release_title }}
         body_path: release_body.md
@@ -1454,13 +1462,13 @@ jobs:
 
           def build_preamble():
               return (
-                  "# Wild Kernels for GKI2 Devices\n\n"
+                  "# Nerest Kernels for GKI2 Devices\n\n"
                   "> [!CAUTION]\n"
                   "> This software is provided for testing and educational purposes only. "
                   "Use at your own risk. The developers are not responsible for any damage, "
                   "data loss, or issues that may occur. Please ensure you have proper backups "
                   "before installation.\n\n"
-                  "Join the Telegram group: <https://t.me/WildKernelsTG>\n\n"
+                  "Join the Telegram group: <https://t.me/NerestKernels>\n\n"
                   "---\n\n"
               )
 
@@ -1574,7 +1582,7 @@ jobs:
               ]
               for feature, doc in feature_doc_map:
                   if feature in enabled:
-                      parts.append(f"- [{feature}](https://github.com/WildKernels/GKI_KernelSU_SUSFS/blob/dev/docs/{doc})")
+                      parts.append(f"- [{feature}](https://github.com/NerestKernels/GKI_KernelSU_SUSFS/blob/dev/docs/{doc})")
               parts.append("")
               return "\n".join(parts)
 
@@ -1588,7 +1596,7 @@ jobs:
                   "2. **Open the Kernel Flasher app**, grant necessary root permissions, and use the provided AnyKernel3 ZIP to flash.\n\n"
                   "This requires the [Kernel Flasher](https://github.com/fatalcoder524/KernelFlasher) app to have root permissions. "
                   "Other apps that can be used include [Kernel Flasher](https://github.com/fatalcoder524/KernelFlasher) and [PixelFlasher](https://github.com/badabing2005/PixelFlasher). "
-                  "Full guide: [docs/installation.md](https://github.com/WildKernels/GKI_KernelSU_SUSFS/blob/dev/docs/installation.md)\n"
+                  "Full guide: [docs/installation.md](https://github.com/NerestKernels/GKI_KernelSU_SUSFS/blob/dev/docs/installation.md)\n"
               )
 
           def render():
