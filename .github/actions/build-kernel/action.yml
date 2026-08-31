@@ -16,8 +16,8 @@ runs:
     working-directory: ${{ github.workspace }}/kernel
     run: |
       set -euo pipefail
-      if: inputs.bypass; then
-        if [[ ${{ inputs.version }} == "android14-6.1" || ${{ inputs.version }} == "android15-6.6" || ${{ inputs.version }} == "android16-6.12" ]]; then
+      if [ "${{ inputs.bypass }}" = "true" ]; then
+        if [[ "${{ inputs.version }}" == "android14-6.1" || "${{ inputs.version }}" == "android15-6.6" || "${{ inputs.version }}" == "android16-6.12" ]]; then
           TARGET_FILE="${{ github.workspace }}/kernel/common/kernel/module/version.c"
         else
           TARGET_FILE="${{ github.workspace }}/kernel/common/kernel/module.c"
@@ -30,6 +30,7 @@ runs:
           grep -A 10 "bad_version:" "$TARGET_FILE" || true
           exit 1
         fi
+        echo "Bypass hack applied to $TARGET_FILE"
       else
         echo "Bypass hack not applied as per input parameter."
       fi
@@ -77,16 +78,16 @@ runs:
       set -euo pipefail
       if [ -f "bazel-bin/common/kernel_aarch64/Image" ]; then
         echo "Found Image at bazel-bin/common/kernel_aarch64/Image"
-        if [[ ${{ inputs.bypass }} == "true" ]]; then
+        if [ "${{ inputs.bypass }}" = "true" ]; then
           cp "bazel-bin/common/kernel_aarch64/Image" "${{ github.workspace }}/AnyKernel3/Bypass-Image"
         else
           cp "bazel-bin/common/kernel_aarch64/Image" "${{ github.workspace }}/AnyKernel3/Image"
         fi
         exit 0
-        fi
+      fi
       if [ -f "/home/runner/out/dist/Image" ]; then
         echo "Found Image at /home/runner/out/dist/Image"
-        if [[ ${{ inputs.bypass }} == "true" ]]; then
+        if [ "${{ inputs.bypass }}" = "true" ]; then
           cp "/home/runner/out/dist/Image" "${{ github.workspace }}/AnyKernel3/Bypass-Image"
         else
           cp "/home/runner/out/dist/Image" "${{ github.workspace }}/AnyKernel3/Image"
@@ -104,4 +105,3 @@ runs:
       set -euo pipefail
       cp ${{ github.action_path }}/patches/bypass.patch "${{ github.workspace }}/AnyKernel3/bypass.patch"
       patch -p1 < bypass.patch
-
