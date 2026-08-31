@@ -468,13 +468,6 @@ jobs:
     - name: Initialize Config Fragment
       run: touch "${{ github.workspace }}/thefloresto.fragment"
 
-    - name: Apply Kernel Bypass Hack
-      if: inputs.bypass
-      uses: ./.github/actions/bypass-kernel
-      with:
-        version: ${{ inputs.version }}
-        bypass: true
-
     - name: Build Normal Kernel
       env:
         SOURCE_DATE_EPOCH: ${{ env.SOURCE_DATE_EPOCH }}
@@ -510,6 +503,13 @@ jobs:
         cache_bucket: "bazel-cache"
         compression_level: 9
         github_token: ${{ github.token }}
+
+    - name: Apply Kernel Bypass Hack
+      if: inputs.bypass
+      uses: ./.github/actions/bypass-kernel
+      with:
+        version: ${{ inputs.version }}
+        bypass: true
 
     - name: Build Bypass Kernel
       if: inputs.bypass
@@ -760,3 +760,15 @@ jobs:
         path: /tmp/build-summary-${{ env.SUMMARY_BASE }}.md
         if-no-files-found: warn
         compression-level: 9
+
+    - name: Upload Build Logs
+      if: failure()
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ steps.extract.outputs.file_name }}-logs
+        path: |
+          ${{ github.workspace }}/kernel/common/build.log
+          ${{ github.workspace }}/kernel/common/out/.config
+        if-no-files-found: ignore
+        compression-level: 9
+        retention-days: 7
