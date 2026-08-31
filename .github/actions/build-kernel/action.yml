@@ -16,7 +16,7 @@ runs:
     working-directory: ${{ github.workspace }}/kernel
     run: |
       set -euo pipefail
-      if [ "${{ inputs.bypass }}" = "true" ]; then
+      if: inputs.bypass; then
         if [[ ${{ inputs.version }} == "android14-6.1" || ${{ inputs.version }} == "android15-6.6" || ${{ inputs.version }} == "android16-6.12" ]]; then
           TARGET_FILE="${{ github.workspace }}/kernel/common/kernel/module/version.c"
         else
