@@ -469,7 +469,6 @@ jobs:
       run: touch "${{ github.workspace }}/thefloresto.fragment"
 
     - name: Apply Kernel Bypass Hack
-      if: inputs.bypass
       if: false
       uses: ./.github/actions/bypass-kernel
       with:
@@ -512,12 +511,15 @@ jobs:
         compression_level: 9
         github_token: ${{ github.token }}
 
-    - name: Apply Kernel Bypass Hack
-      if: false
-      uses: ./.github/actions/bypass-kernel
+    - name: Build Bypass Kernel
+      if: inputs.bypass
+      env:
+        SOURCE_DATE_EPOCH: ${{ env.SOURCE_DATE_EPOCH }}
+        KBUILD_BUILD_TIMESTAMP: ${{ env.KBUILD_BUILD_TIMESTAMP }}
+      uses: ./.github/actions/build-kernel
       with:
-        version: ${{ inputs.version }}
         bypass: true
+        version: ${{ inputs.version }}
 
     - name: Consolidated Build Summary
       if: always()
