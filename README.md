@@ -11,8 +11,8 @@
 </a>
 
 [![KernelSU-Next](https://img.shields.io/badge/KernelSU_Next-Supported-green)](https://kernelsu-next.github.io/webpage/)
-[![Wild KSU](https://img.shields.io/badge/Wild_KSU-Not%20Supported-cb2431)](https://github.com/WildKernels/Wild_KSU/)
-[![KernelSU](https://img.shields.io/badge/KernelSU-Not%20Supported-cb2431)](https://kernelsu.org/)
+[![ReSukiSU](https://img.shields.io/badge/ReSukiSU-Supported-green)](https://github.com/ReSukiSU/ReSukiSU)
+[![KernelSU](https://img.shields.io/badge/KernelSU-Supported-green)](https://kernelsu.org/)
 [![SUSFS](https://img.shields.io/badge/SUSFS-Integrated-orange?logo=gitlab)](https://gitlab.com/simonpunk/susfs4ksu)
 
 > **Forked from [WildKernels/GKI_KernelSU_SUSFS](https://github.com/WildKernels/GKI_KernelSU_SUSFS)**
@@ -229,8 +229,8 @@ If you encounter any issues or need help, feel free to:
 
 <div align="center">
 
-[![Telegram](https://img.shields.io/badge/Telegram-SakFi-blue?logo=telegram)](http://t.me/SakFi)
-[![GitHub](https://img.shields.io/badge/GitHub-SakFi-blue?logo=github)](https://github.com/sakfi)
+[![Telegram](https://img.shields.io/badge/Telegram-TheFloresto-blue?logo=telegram)](http://t.me/TheFloresto)
+[![GitHub](https://img.shields.io/badge/GitHub-TheFloresto-blue?logo=github)](https://github.com/TheFloresto)
 
 </div>
 
