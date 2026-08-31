@@ -470,6 +470,7 @@ jobs:
 
     - name: Apply Kernel Bypass Hack
       if: inputs.bypass
+      if: false
       uses: ./.github/actions/bypass-kernel
       with:
         version: ${{ inputs.version }}
@@ -511,15 +512,12 @@ jobs:
         compression_level: 9
         github_token: ${{ github.token }}
 
-    - name: Build Bypass Kernel
-      if: inputs.bypass
-      env:
-        SOURCE_DATE_EPOCH: ${{ env.SOURCE_DATE_EPOCH }}
-        KBUILD_BUILD_TIMESTAMP: ${{ env.KBUILD_BUILD_TIMESTAMP }}
-      uses: ./.github/actions/build-kernel
+    - name: Apply Kernel Bypass Hack
+      if: false
+      uses: ./.github/actions/bypass-kernel
       with:
-        bypass: true
         version: ${{ inputs.version }}
+        bypass: true
 
     - name: Consolidated Build Summary
       if: always()
