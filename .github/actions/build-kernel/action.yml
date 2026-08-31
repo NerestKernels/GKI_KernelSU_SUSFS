@@ -11,30 +11,6 @@ inputs:
 runs:
   using: composite
   steps:
-  - name: 'Activate Bypass'
-    shell: bash
-    working-directory: ${{ github.workspace }}/kernel
-    run: |
-      set -euo pipefail
-      if [ "${{ inputs.bypass }}" = "true" ]; then
-        if [[ "${{ inputs.version }}" == "android14-6.1" || "${{ inputs.version }}" == "android15-6.6" || "${{ inputs.version }}" == "android16-6.12" ]]; then
-          TARGET_FILE="${{ github.workspace }}/kernel/common/kernel/module/version.c"
-        else
-          TARGET_FILE="${{ github.workspace }}/kernel/common/kernel/module.c"
-        fi
-
-        sed -i '/bad_version:/{:a;n;/return 0;/{s/return 0;/return 1;/;b};ba}' "$TARGET_FILE"
-
-        if ! grep -A 5 "bad_version:" "$TARGET_FILE" | grep -q "return 1;"; then
-          echo "Patch failed! 'return 1;' not found at bad_version:"
-          grep -A 10 "bad_version:" "$TARGET_FILE" || true
-          exit 1
-        fi
-        echo "Bypass hack applied to $TARGET_FILE"
-      else
-        echo "Bypass hack not applied as per input parameter."
-      fi
-
   - name: Setup Kernel Configs
     if: false
     uses: ./.github/actions/set-kernel-config
