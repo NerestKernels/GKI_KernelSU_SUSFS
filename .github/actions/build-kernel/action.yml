@@ -98,7 +98,7 @@ runs:
 
   - name: 'Patch AnyKernel3 for Bypass Hack'
     shell: bash
-    if: ${{ inputs.bypass == 'true' }}
+    if: inputs.bypass
     working-directory: ${{ github.workspace }}/AnyKernel3
     run: |
       set -euo pipefail
