@@ -1,0 +1,40 @@
+name: Apply Kernel Bypass Hack
+description: >
+  Patches the kernel version-check path (bad_version) to return 1 instead of 0,
+  allowing kernels that would otherwise reject the build to boot.
+  Disabled by default; enable by passing bypass: true at the workflow level.
+inputs:
+  bypass:
+    description: 'Whether to apply the bypass hack'
+    required: false
+    type: boolean
+    default: false
+  version:
+    description: 'Kernel config version (e.g., android14-6.1)'
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Activate Bypass
+      if: ${{ inputs.bypass == 'true' }}
+      shell: bash
+      working-directory: ${{ github.workspace }}/kernel
+      run: |
+        set -euo pipefail
+
+        if [[ "${{ inputs.version }}" == "android14-6.1" \
+            || "${{ inputs.version }}" == "android15-6.6" \
+            || "${{ inputs.version }}" == "android16-6.12" ]]; then
+          TARGET_FILE="${{ github.workspace }}/kernel/common/kernel/module/version.c"
+        else
+          TARGET_FILE="${{ github.workspace }}/kernel/common/kernel/module.c"
+        fi
+
+        sed -i '/bad_version:/{:a;n;/return 0;/{s/return 0;/return 1;/;b};ba}' "$TARGET_FILE"
+
+        if ! grep -A 5 "bad_version:" "$TARGET_FILE" | grep -q "return 1;"; then
+          echo "Patch failed! 'return 1;' not found at bad_version:" >&2
+          grep -A 10 "bad_version:" "$TARGET_FILE" || true
+          exit 1
+        fi
+        echo "Bypass hack applied to $TARGET_FILE"

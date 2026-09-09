@@ -1,0 +1,60 @@
+name: 'Setup SUSFS Branch'
+description: 'Clone SUSFS repo and cherry-pick commits'
+inputs:
+  susfs_commit:
+    description: 'SUSFS commit hash (empty = latest on auto-derived gki-{version} branch)'
+    required: false
+    default: ""
+  version:
+    description: 'Kernel config version (e.g., android15-6.6)'
+    required: true
+  root_flavor:
+    description: 'Selected root implementation - pershoot patches only apply to next'
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Clone SUSFS Branch
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        # Retry transient network errors (up to 5 attempts, 5s backoff).
+        retry() {
+          local n=0
+          until [ "$n" -ge 5 ]; do
+            "$@" && return 0
+            n=$((n+1))
+            echo "retry $n/5 failed for: $*" >&2
+            sleep 5
+          done
+          return 1
+        }
+
+        SUSFS_BRANCH="gki-${{ inputs.version }}"
+        SUSFS_REPO="https://gitlab.com/simonpunk/susfs4ksu.git"
+
+        echo "Preparing SUSFS for branch: $SUSFS_BRANCH"
+        echo "Cloning latest from $SUSFS_BRANCH..."
+        retry git clone "$SUSFS_REPO" -b "$SUSFS_BRANCH" susfs4ksu
+
+        if [ -n "${{ inputs.susfs_commit }}" ]; then
+          echo "Checking out SUSFS commit: ${{ inputs.susfs_commit }}"
+          retry git -C "${{ github.workspace }}/susfs4ksu" checkout "${{ inputs.susfs_commit }}"
+        fi
+
+        cd "${{ github.workspace }}/susfs4ksu"
+        SUSFS_COMMIT="$(git rev-parse HEAD)"
+        echo "SUSFS_COMMIT=$SUSFS_COMMIT" >> "$GITHUB_ENV"
+        echo "Using SUSFS commit: $SUSFS_COMMIT"
+
+        # Pershoot's latest two gki-android14-6.1-dev commits (currently the
+        # no-features core build + Toolkit coexistence fixes) only apply to
+        # KernelSU-Next (dev-susfs fork). Other flavors use the simonpunk
+        # checkout as-is.
+        if [ "${{ inputs.root_flavor }}" = "next" ]; then
+          git fetch https://gitlab.com/pershoot/susfs4ksu.git gki-android14-6.1-dev || true
+          git log ..FETCH_HEAD --oneline -n 2 | awk '{print $1}' | tac | xargs git cherry-pick 2>/dev/null || true
+        fi

@@ -1,0 +1,1149 @@
+name: Fetch Root Managers
+
+permissions:
+  contents: read
+  actions: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      root_flavor:
+        description: "Root flavor to fetch managers for"
+        type: choice
+        options:
+          - All
+          - KernelSU-Next
+          - KernelSU
+          - ReSukiSU
+          - SukiSU-Ultra
+          - KowSU
+          - No Root
+          - KernelSU-Next-SUSFS
+        default: All
+      kernelsu_next_commit:
+        description: "Pin KernelSU-Next manager to this commit (40-char SHA, empty = latest dev tip)"
+        required: false
+        type: string
+        default: ""
+      kernelsu_commit:
+        description: "Pin KernelSU manager to this commit (40-char SHA, empty = latest main tip)"
+        required: false
+        type: string
+        default: ""
+      resukisu_commit:
+        description: "Pin ReSukiSU manager to this commit (40-char SHA, empty = latest main tip)"
+        required: false
+        type: string
+        default: ""
+      sukisu_ultra_commit:
+        description: "Pin SukiSU-Ultra manager to this commit (40-char SHA, empty = latest main tip)"
+        required: false
+        type: string
+        default: ""
+      kernelsu_next_susfs_commit:
+        description: "Pin KernelSU-Next SUSFS (pershoot dev-susfs) manager to this commit (40-char SHA, empty = latest dev-susfs tip)"
+        required: false
+        type: string
+        default: ""
+      build_from_source:
+        description: "Build from source — clone each repo at the pinned commit and build LKM + ksud + manager locally (instead of fetching upstream CI artifacts)"
+        required: false
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      root_flavor:
+        description: "Root flavor to fetch managers for"
+        required: false
+        type: string
+        default: All
+      kernelsu_next_commit:
+        description: "Pin KernelSU-Next manager commit"
+        required: false
+        type: string
+        default: ""
+      kernelsu_commit:
+        description: "Pin KernelSU manager commit"
+        required: false
+        type: string
+        default: ""
+      resukisu_commit:
+        description: "Pin ReSukiSU manager commit"
+        required: false
+        type: string
+        default: ""
+      sukisu_ultra_commit:
+        description: "Pin SukiSU-Ultra manager commit"
+        required: false
+        type: string
+        default: ""
+      kernelsu_next_susfs_commit:
+        description: "Pin KernelSU-Next SUSFS manager commit"
+        required: false
+        type: string
+        default: ""
+      build_from_source:
+        description: "Build from source instead of fetching artifacts"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  # ── path A: fetch prebuilt manager APKs from upstream CI (default) ──
+  resolve-managers:
+    if: ${{ !inputs.build_from_source }}
+    runs-on: ubuntu-latest
+    outputs:
+      manager_list: ${{ steps.manager.outputs.manager_list }}
+    steps:
+      - name: Resolve manager builds for selected root flavor(s)
+        id: manager
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_ROOT_FLAVOR: ${{ inputs.root_flavor }}
+          INPUT_NEXT_COMMIT: ${{ inputs.kernelsu_next_commit }}
+          INPUT_KSU_COMMIT: ${{ inputs.kernelsu_commit }}
+          INPUT_RESUKISU_COMMIT: ${{ inputs.resukisu_commit }}
+          INPUT_SUKISU_ULTRA_COMMIT: ${{ inputs.sukisu_ultra_commit }}
+          INPUT_NEXT_SUSFS_COMMIT: ${{ inputs.kernelsu_next_susfs_commit }}
+        run: |
+          set -euo pipefail
+
+          # Credit: authenticated gh-API manager lookup adapted from EmberHeart-Kernels
+          # commit ae9a341 (nullptr-t-oss/composite_actions fetch_ksu_manager).
+          # Exact extraction of main.yml#resolve-managers / manager step.
+          # Each selected root must ship ALL manager APK builds. KernelSU-Next publishes
+          # its manager APKs (manager + manager-spoofed) from the official dev-tip
+          # build-manager-ci run; kernelsu (KernelSU), ReSukiSU, SukiSU-Ultra,
+          # and KowSU expose theirs as CI-run artifacts. All are pinned to an exact commit.
+          # No Root ships no manager.
+
+          retry() {
+            local n=0
+            until [ "$n" -ge 5 ]; do
+              "$@" && return 0
+              n=$((n+1))
+              echo "retry $n/5 failed for: $*" >&2
+              sleep 5
+            done
+            return 1
+          }
+
+          resolve_sha() { # repo ref
+            retry git ls-remote "$1" "$2" | awk '{print $1; exit}'
+          }
+
+          resolve_one() { # flavor
+            local flavor="$1"
+            local owner repo wf stock
+            case "$flavor" in
+              next)
+                owner="KernelSU-Next"; repo="KernelSU-Next"; wf="build-manager-ci.yml"
+                if [[ -n "${INPUT_NEXT_COMMIT:-}" ]]; then
+                  stock="$INPUT_NEXT_COMMIT"
+                  if ! [[ "$stock" =~ ^[0-9a-f]{40}$ ]]; then
+                    echo "ERROR: kernelsu_next_commit must be a 40-char SHA (got: $stock)" >&2
+                    exit 1
+                  fi
+                else
+                  stock=$(resolve_sha https://github.com/KernelSU-Next/KernelSU-Next.git refs/heads/dev)
+                fi
+                run_id=$(gh api "repos/${owner}/${repo}/actions/workflows/${wf}/runs?head_sha=${stock}" \
+                  --jq '.workflow_runs[0].id // empty')
+                if [[ -z "${run_id}" ]]; then
+                  if [[ -z "${INPUT_NEXT_COMMIT:-}" ]]; then
+                    echo "No manager build for dev tip ${stock}, falling back to latest successful run" >&2
+                    fb=$(gh api "repos/${owner}/${repo}/actions/workflows/${wf}/runs?branch=dev&status=success&per_page=1")
+                    run_id=$(echo "$fb" | jq -r '.workflow_runs[0].id // empty')
+                    stock=$(echo "$fb" | jq -r '.workflow_runs[0].head_sha // empty')
+                    if [[ -n "$run_id" ]]; then echo "Fallback to ${stock} run ${run_id}" >&2; fi
+                  fi
+                  if [[ -z "${run_id}" ]]; then
+                    echo "ERROR: no ${repo} manager build exists for dev commit ${stock}" >&2
+                    exit 1
+                  fi
+                fi
+                printf '{"flavor":"%s","owner":"%s","repo":"%s","source":"run","run_id":%s,"stock":"%s","want":"manager,manager-spoofed"}' \
+                  "$flavor" "$owner" "$repo" "$run_id" "$stock"
+                ;;
+
+              kernelsu)
+                owner="tiann"; repo="KernelSU"; wf="build-manager.yml"
+                if [[ -n "${INPUT_KSU_COMMIT:-}" ]]; then
+                  stock="$INPUT_KSU_COMMIT"
+                  if ! [[ "$stock" =~ ^[0-9a-f]{40}$ ]]; then
+                    echo "ERROR: kernelsu_commit must be a 40-char SHA (got: $stock)" >&2
+                    exit 1
+                  fi
+                else
+                  stock=$(resolve_sha https://github.com/tiann/KernelSU.git refs/heads/main)
+                fi
+                run_id=$(gh api "repos/${owner}/${repo}/actions/workflows/${wf}/runs?head_sha=${stock}" \
+                  --jq '.workflow_runs[0].id // empty')
+                if [[ -z "${run_id}" ]]; then
+                  if [[ -z "${INPUT_KSU_COMMIT:-}" ]]; then
+                    echo "No manager build for stock ${stock}, falling back to latest successful run" >&2
+                    fb=$(gh api "repos/${owner}/${repo}/actions/workflows/${wf}/runs?branch=main&status=success&per_page=1")
+                    run_id=$(echo "$fb" | jq -r '.workflow_runs[0].id // empty')
+                    stock=$(echo "$fb" | jq -r '.workflow_runs[0].head_sha // empty')
+                    if [[ -n "$run_id" ]]; then echo "Fallback to ${stock} run ${run_id}" >&2; fi
+                  fi
+                  if [[ -z "${run_id}" ]]; then
+                    echo "ERROR: no ${repo} manager build exists for stock commit ${stock}" >&2
+                    exit 1
+                  fi
+                fi
+                printf '{"flavor":"%s","owner":"%s","repo":"%s","source":"run","run_id":%s,"stock":"%s","want":"manager"}' \
+                  "$flavor" "$owner" "$repo" "$run_id" "$stock"
+                ;;
+
+              next-susfs)
+                owner="pershoot"; repo="KernelSU-Next"; wf="build-manager-ci.yml"
+                if [[ -n "${INPUT_NEXT_SUSFS_COMMIT:-}" ]]; then
+                  stock="$INPUT_NEXT_SUSFS_COMMIT"
+                  if ! [[ "$stock" =~ ^[0-9a-f]{40}$ ]]; then
+                    echo "ERROR: kernelsu_next_susfs_commit must be a 40-char SHA (got: $stock)" >&2
+                    exit 1
+                  fi
+                else
+                  stock=$(resolve_sha https://github.com/pershoot/KernelSU-Next.git refs/heads/dev-susfs)
+                  # fallback to upstream KernelSU-Next dev-susfs if pershoot fork tip not found
+                  if ! [[ "$stock" =~ ^[0-9a-f]{40}$ ]]; then
+                    stock=$(resolve_sha https://github.com/KernelSU-Next/KernelSU-Next.git refs/heads/dev-susfs)
+                  fi
+                fi
+                run_id=$(gh api "repos/${owner}/${repo}/actions/workflows/${wf}/runs?head_sha=${stock}" \
+                  --jq '.workflow_runs[0].id // empty')
+                if [[ -z "${run_id}" ]]; then
+                  if [[ -z "${INPUT_NEXT_SUSFS_COMMIT:-}" ]]; then
+                    echo "No manager build for dev-susfs tip ${stock}, falling back to latest successful run" >&2
+                    fb=$(gh api "repos/${owner}/${repo}/actions/workflows/${wf}/runs?branch=dev-susfs&status=success&per_page=1")
+                    run_id=$(echo "$fb" | jq -r '.workflow_runs[0].id // empty')
+                    stock=$(echo "$fb" | jq -r '.workflow_runs[0].head_sha // empty')
+                    if [[ -z "$run_id" ]]; then
+                      # dev-susfs has no CI on this fork — try dev fallback
+                      echo "No dev-susfs CI run, trying dev branch fallback" >&2
+                      fb=$(gh api "repos/${owner}/${repo}/actions/workflows/${wf}/runs?branch=dev&status=success&per_page=1")
+                      run_id=$(echo "$fb" | jq -r '.workflow_runs[0].id // empty')
+                      stock=$(echo "$fb" | jq -r '.workflow_runs[0].head_sha // empty')
+                    fi
+                    if [[ -n "$run_id" ]]; then echo "Fallback to ${stock} run ${run_id}" >&2; fi
+                  fi
+                  if [[ -z "${run_id}" ]]; then
+                    echo "WARNING: no ${owner}/${repo} manager build for dev-susfs commit ${stock} — will need build_from_source" >&2
+                    # emit empty want so fetch path skips gracefully; source build will handle it
+                    printf '{"flavor":"%s","owner":"%s","repo":"%s","source":"run","run_id":null,"stock":"%s","want":"manager,manager-spoofed","note":"no-ci-run"}' \
+                      "$flavor" "$owner" "$repo" "$stock"
+                    return 0
+                  fi
+                fi
+                printf '{"flavor":"%s","owner":"%s","repo":"%s","source":"run","run_id":%s,"stock":"%s","want":"manager,manager-spoofed"}' \
+                  "$flavor" "$owner" "$repo" "$run_id" "$stock"
+                ;;
+
+              resukisu)
+                owner="ReSukiSU"; repo="ReSukiSU"; wf="build-manager.yml"
+                if [[ -n "${INPUT_RESUKISU_COMMIT:-}" ]]; then
+                  stock="$INPUT_RESUKISU_COMMIT"
+                  if ! [[ "$stock" =~ ^[0-9a-f]{40}$ ]]; then
+                    echo "ERROR: resukisu_commit must be a 40-char SHA (got: $stock)" >&2
+                    exit 1
+                  fi
+                else
+                  stock=$(resolve_sha https://github.com/ReSukiSU/ReSukiSU.git refs/heads/main)
+                fi
+                run_id=$(gh api "repos/${owner}/${repo}/actions/workflows/${wf}/runs?head_sha=${stock}" \
+                  --jq '.workflow_runs[0].id // empty')
+                if [[ -z "${run_id}" ]]; then
+                  if [[ -z "${INPUT_RESUKISU_COMMIT:-}" ]]; then
+                    echo "No manager build for stock ${stock}, falling back to latest successful run" >&2
+                    fb=$(gh api "repos/${owner}/${repo}/actions/workflows/${wf}/runs?branch=main&status=success&per_page=1")
+                    run_id=$(echo "$fb" | jq -r '.workflow_runs[0].id // empty')
+                    stock=$(echo "$fb" | jq -r '.workflow_runs[0].head_sha // empty')
+                    if [[ -n "$run_id" ]]; then echo "Fallback to ${stock} run ${run_id}" >&2; fi
+                  fi
+                  if [[ -z "${run_id}" ]]; then
+                    echo "ERROR: no ${repo} manager build exists for stock commit ${stock}" >&2
+                    exit 1
+                  fi
+                fi
+                printf '{"flavor":"%s","owner":"%s","repo":"%s","source":"run","run_id":%s,"stock":"%s","want":"Manager-release,Spoofed-Manager-release"}' \
+                  "$flavor" "$owner" "$repo" "$run_id" "$stock"
+                ;;
+
+              sukisu-ultra)
+                owner="SukiSU-Ultra"; repo="SukiSU-Ultra"; wf="build-manager.yml"
+                if [[ -n "${INPUT_SUKISU_ULTRA_COMMIT:-}" ]]; then
+                  stock="$INPUT_SUKISU_ULTRA_COMMIT"
+                  if ! [[ "$stock" =~ ^[0-9a-f]{40}$ ]]; then
+                    echo "ERROR: sukisu_ultra_commit must be a 40-char SHA (got: $stock)" >&2
+                    exit 1
+                  fi
+                else
+                  stock=$(resolve_sha https://github.com/SukiSU-Ultra/SukiSU-Ultra.git refs/heads/main)
+                fi
+                run_id=$(gh api "repos/${owner}/${repo}/actions/workflows/${wf}/runs?head_sha=${stock}" \
+                  --jq '.workflow_runs[0].id // empty')
+                if [[ -z "${run_id}" ]]; then
+                  if [[ -z "${INPUT_SUKISU_ULTRA_COMMIT:-}" ]]; then
+                    echo "No manager build for stock ${stock}, falling back to latest successful run" >&2
+                    fb=$(gh api "repos/${owner}/${repo}/actions/workflows/${wf}/runs?branch=main&status=success&per_page=1")
+                    run_id=$(echo "$fb" | jq -r '.workflow_runs[0].id // empty')
+                    stock=$(echo "$fb" | jq -r '.workflow_runs[0].head_sha // empty')
+                    if [[ -n "$run_id" ]]; then echo "Fallback to ${stock} run ${run_id}" >&2; fi
+                  fi
+                  if [[ -z "${run_id}" ]]; then
+                    echo "ERROR: no ${repo} manager build exists for stock commit ${stock}" >&2
+                    exit 1
+                  fi
+                fi
+                printf '{"flavor":"%s","owner":"%s","repo":"%s","source":"run","run_id":%s,"stock":"%s","want":"Manager,Spoofed-Manager"}' \
+                  "$flavor" "$owner" "$repo" "$run_id" "$stock"
+                ;;
+
+              kowsu)
+                # KowSU has no SUSFS support and always tracks latest master.
+                owner="KOWX712"; repo="KernelSU"; wf="build-manager.yml"
+                stock=$(resolve_sha https://github.com/KOWX712/KernelSU.git refs/heads/master)
+                run_id=$(gh api "repos/${owner}/${repo}/actions/workflows/${wf}/runs?head_sha=${stock}" \
+                  --jq '.workflow_runs[0].id // empty')
+                if [[ -z "${run_id}" ]]; then
+                  echo "No manager build for stock ${stock}, falling back to latest successful run" >&2
+                  fb=$(gh api "repos/${owner}/${repo}/actions/workflows/${wf}/runs?branch=master&status=success&per_page=1")
+                  run_id=$(echo "$fb" | jq -r '.workflow_runs[0].id // empty')
+                  stock=$(echo "$fb" | jq -r '.workflow_runs[0].head_sha // empty')
+                  if [[ -n "$run_id" ]]; then echo "Fallback to ${stock} run ${run_id}" >&2; fi
+                  if [[ -z "${run_id}" ]]; then
+                    echo "ERROR: no ${repo} manager build exists for stock commit ${stock}" >&2
+                    exit 1
+                  fi
+                fi
+                printf '{"flavor":"%s","owner":"%s","repo":"%s","source":"run","run_id":%s,"stock":"%s","want":"manager"}' \
+                  "$flavor" "$owner" "$repo" "$run_id" "$stock"
+                ;;
+
+              *)
+                echo "skipping unknown flavor: $flavor" >&2
+                return 0
+                ;;
+            esac
+          }
+
+          FLAVORS="${INPUT_ROOT_FLAVOR:-All}"
+          echo "Root flavor: ${FLAVORS}"
+          LIST=""
+          case "${FLAVORS}" in
+            All) LIST=$(jq -c -n '[inputs]' <<< "$(resolve_one next)"$'\n'"$(resolve_one next-susfs)"$'\n'"$(resolve_one kernelsu)"$'\n'"$(resolve_one resukisu)") ;;
+            KernelSU-Next) LIST=$(jq -c -n '[inputs]' <<< "$(resolve_one next)") ;;
+            KernelSU-Next-SUSFS) LIST=$(jq -c -n '[inputs]' <<< "$(resolve_one next-susfs)") ;;
+            KernelSU) LIST=$(jq -c -n '[inputs]' <<< "$(resolve_one kernelsu)") ;;
+            ReSukiSU) LIST=$(jq -c -n '[inputs]' <<< "$(resolve_one resukisu)") ;;
+            SukiSU-Ultra) LIST=$(jq -c -n '[inputs]' <<< "$(resolve_one sukisu-ultra)") ;;
+            KowSU) LIST=$(jq -c -n '[inputs]' <<< "$(resolve_one kowsu)") ;;
+            *) echo "Skipping manager resolution (no root flavor / none)." ;;
+          esac
+          if [ -n "$LIST" ]; then
+            echo "manager_list=$LIST" >> "$GITHUB_OUTPUT"
+            echo "Manager sources resolved: $LIST"
+          else
+            echo "manager_list=[]" >> "$GITHUB_OUTPUT"
+          fi
+
+  list-manager-apks:
+    needs: resolve-managers
+    if: ${{ !inputs.build_from_source && needs.resolve-managers.outputs.manager_list != '' && needs.resolve-managers.outputs.manager_list != '[]' }}
+    runs-on: ubuntu-latest
+    outputs:
+      apk_list: ${{ steps.scan.outputs.apk_list }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download and scan all manager APKs
+        id: scan
+        shell: bash
+        env:
+          MANAGER_LIST: ${{ needs.resolve-managers.outputs.manager_list }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          MANAGER_LIST=$(echo "$MANAGER_LIST" | sed 's/^\[,/[/')
+          if ! echo "$MANAGER_LIST" | jq empty 2>/dev/null; then
+            echo "ERROR: Invalid MANAGER_LIST JSON"
+            echo "Raw: $MANAGER_LIST"
+            exit 0
+          fi
+          OUT_APKS="${GITHUB_WORKSPACE:-$PWD}/manager_apks"
+          MANIFEST="${GITHUB_WORKSPACE:-$PWD}/manifest.txt"
+          rm -rf "$OUT_APKS" "$MANIFEST"
+          mkdir -p "$OUT_APKS"
+          : > "$MANIFEST"
+          echo "$MANAGER_LIST" | jq -c '.[] | select(.run_id != null and .run_id != "null")' | while read -r M; do
+            OWNER=$(echo "$M" | jq -r .owner)
+            REPO=$(echo "$M" | jq -r .repo)
+            SRC=$(echo "$M" | jq -r .source)
+            RUN_ID=$(echo "$M" | jq -r .run_id)
+            WANT=$(echo "$M" | jq -r '.want // ""')
+            DLDIR="dl_${REPO}"
+            mkdir -p "$DLDIR"
+            (
+              cd "$DLDIR"
+              if [ "$SRC" = "release" ]; then
+                curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors \
+                  -H "Authorization: Bearer ***" \
+                  "https://api.github.com/repos/${OWNER}/${REPO}/releases/latest" > rel.json
+                for URL in $(jq -r '.assets[] | select(.name | endswith(".apk")) | .browser_download_url' rel.json); do
+                  NAME="${URL##*/}"
+                  curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors -o "$NAME" "$URL"
+                  cp -f "$NAME" "$OUT_APKS/$NAME"
+                  echo "$OWNER|$REPO|$NAME" >> "$MANIFEST"
+                done
+              else
+                AJSON=$(curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors \
+                  -H "Authorization: Bearer $GH_TOKEN" \
+                  "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs/${RUN_ID}/artifacts")
+                if [ -z "$WANT" ]; then
+                  ART_IDS=$(echo "$AJSON" | jq -r '.artifacts[].id')
+                else
+                  ART_IDS=$(echo "$AJSON" | jq -r --arg want "$WANT" '
+                    ($want | split(",")) as $wl |
+                    .artifacts[] | select(.name as $n | any($wl[]; $n == .)) | .id')
+                fi
+                echo "$ART_IDS" | while read -r AID; do
+                  [ -n "$AID" ] || continue
+                  curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors \
+                    -H "Authorization: Bearer $GH_TOKEN" \
+                    -o "_${AID}.zip" \
+                    "https://api.github.com/repos/${OWNER}/${REPO}/actions/artifacts/${AID}/zip"
+                  mkdir -p "_${AID}"
+                  unzip -o -q "_${AID}.zip" -d "_${AID}" || true
+                  rm -f "_${AID}.zip"
+                  for apk in _${AID}/*.apk; do
+                    [ -f "$apk" ] || continue
+                    NAME="$(basename "$apk")"
+                    cp -f "$apk" "$OUT_APKS/$NAME"
+                    echo "$OWNER|$REPO|$NAME" >> "$MANIFEST"
+                  done
+                  rm -rf "_${AID}"
+                done
+              fi
+            )
+          done
+          # Filter ReSukiSU to only release universal and universal spoofed
+          if grep -q "ReSukiSU|ReSukiSU|" "$MANIFEST" 2>/dev/null; then
+            tmp_manifest="${MANIFEST}.filtered"
+            : > "$tmp_manifest"
+            while IFS='|' read -r o r n; do
+              [ -n "$n" ] || continue
+              if [ "$o" = "ReSukiSU" ] && [ "$r" = "ReSukiSU" ]; then
+                ln=$(echo "$n" | tr '[:upper:]' '[:lower:]')
+                if [[ "$ln" != *universal* ]]; then echo "Dropping ReSukiSU non-universal $n" >&2; rm -f "$OUT_APKS/$n"; continue; fi
+                if [[ "$ln" == *debug* ]]; then echo "Dropping ReSukiSU debug $n" >&2; rm -f "$OUT_APKS/$n"; continue; fi
+              fi
+              echo "$o|$r|$n" >> "$tmp_manifest"
+            done < "$MANIFEST"
+            mv "$tmp_manifest" "$MANIFEST"
+          fi
+          APK_JSON="[]"
+          while IFS='|' read -r o r n; do
+            [ -n "$n" ] || continue
+            APK_JSON=$(echo "$APK_JSON" | jq -c --arg o "$o" --arg r "$r" --arg n "$n" \
+              '. + [{owner:$o,repo:$r,apk:$n}]')
+          done < "$MANIFEST"
+          echo "apk_list=${APK_JSON}" >> "$GITHUB_OUTPUT"
+          echo "Found $(wc -l < "$MANIFEST" 2>/dev/null | tr -d ' ' || echo 0) manager APKs"
+          ls -lh "$OUT_APKS" || true
+
+      - name: Upload all manager APKs as one cross-blob
+        uses: actions/upload-artifact@v7
+        with:
+          name: manager-apks
+          path: manager_apks/
+          if-no-files-found: ignore
+
+  # ── path B: build from source — mirror upstream workflow order ──
+  # Upstream: build-lkm -> build-ksuinit -> build-ksud (matrix) -> build-manager (needs ksud, copies to jniLibs)
+  # We mirror that order so manager embeds ksud correctly. No extra gradle.properties edits beside your key.
+  build-ksud-from-source:
+    if: ${{ inputs.build_from_source }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - flavor: next
+            repo: https://github.com/KernelSU-Next/KernelSU-Next.git
+            ref: dev
+          - flavor: next-susfs
+            repo: https://github.com/pershoot/KernelSU-Next.git
+            ref: dev-susfs
+          - flavor: kernelsu
+            repo: https://github.com/tiann/KernelSU.git
+            ref: main
+          - flavor: resukisu
+            repo: https://github.com/ReSukiSU/ReSukiSU.git
+            ref: main
+          - flavor: sukisu-ultra
+            repo: https://github.com/SukiSU-Ultra/SukiSU-Ultra.git
+            ref: main
+          - flavor: kowsu
+            repo: https://github.com/KOWX712/KernelSU.git
+            ref: master
+    steps:
+      - name: Gate on root_flavor filter
+        id: gate
+        shell: bash
+        env:
+          ROOT_FLAVOR: ${{ inputs.root_flavor }}
+        run: |
+          WANT="${{ inputs.root_flavor }}"
+          WANT="${WANT:-All}"
+          FLAVOR="${{ matrix.flavor }}"
+          case "$WANT" in
+            All) echo "run=true" >> "$GITHUB_OUTPUT" ;;
+            KernelSU-Next) [[ "$FLAVOR" == "next" ]] && echo "run=true" >> "$GITHUB_OUTPUT" || echo "run=false" >> "$GITHUB_OUTPUT" ;;
+            KernelSU-Next-SUSFS) [[ "$FLAVOR" == "next-susfs" ]] && echo "run=true" >> "$GITHUB_OUTPUT" || echo "run=false" >> "$GITHUB_OUTPUT" ;;
+            KernelSU) [[ "$FLAVOR" == "kernelsu" ]] && echo "run=true" >> "$GITHUB_OUTPUT" || echo "run=false" >> "$GITHUB_OUTPUT" ;;
+            ReSukiSU) [[ "$FLAVOR" == "resukisu" ]] && echo "run=true" >> "$GITHUB_OUTPUT" || echo "run=false" >> "$GITHUB_OUTPUT" ;;
+            SukiSU-Ultra) [[ "$FLAVOR" == "sukisu-ultra" ]] && echo "run=true" >> "$GITHUB_OUTPUT" || echo "run=false" >> "$GITHUB_OUTPUT" ;;
+            KowSU) [[ "$FLAVOR" == "kowsu" ]] && echo "run=true" >> "$GITHUB_OUTPUT" || echo "run=false" >> "$GITHUB_OUTPUT" ;;
+            *) echo "run=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Resolve commit for this flavor
+        if: steps.gate.outputs.run == 'true'
+        id: commit
+        shell: bash
+        env:
+          KSU_NEXT_COMMIT: ${{ inputs.kernelsu_next_commit }}
+          KSU_NEXT_SUSFS_COMMIT: ${{ inputs.kernelsu_next_susfs_commit }}
+          KSU_COMMIT: ${{ inputs.kernelsu_commit }}
+          RESUKISU_COMMIT: ${{ inputs.resukisu_commit }}
+          SUKISU_ULTRA_COMMIT: ${{ inputs.sukisu_ultra_commit }}
+        run: |
+          set -euo pipefail
+          flavor="${{ matrix.flavor }}"
+          case "$flavor" in
+            next) pin="$KSU_NEXT_COMMIT" ;;
+            next-susfs) pin="$KSU_NEXT_SUSFS_COMMIT" ;;
+            kernelsu) pin="$KSU_COMMIT" ;;
+            resukisu) pin="$RESUKISU_COMMIT" ;;
+            sukisu-ultra) pin="$SUKISU_ULTRA_COMMIT" ;;
+            kowsu) pin="" ;;
+          esac
+          if [[ -n "${pin:-}" ]]; then
+            echo "sha=$pin" >> "$GITHUB_OUTPUT"
+          else
+            sha=$(git ls-remote "${{ matrix.repo }}" "refs/heads/${{ matrix.ref }}" | awk '{print $1; exit}')
+            echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Clone ${{ matrix.flavor }} at pinned commit
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="${{ steps.commit.outputs.sha }}"
+          repo="${{ matrix.repo }}"
+          flavor="${{ matrix.flavor }}"
+          dir="/tmp/$flavor-src"
+          rm -rf "$dir"
+          git clone --no-checkout "$repo" "$dir"
+          git -C "$dir" fetch --prune --tags --force origin "+refs/heads/*:refs/remotes/origin/*" "+refs/tags/*:refs/tags/*" 2>&1 | tail -5 || true
+          git -C "$dir" checkout --detach "$sha"
+          actual=$(git -C "$dir" rev-parse HEAD)
+          if [[ "$actual" != "$sha" ]]; then echo "mismatch $sha vs $actual" >&2; exit 1; fi
+          echo "Cloned $flavor at $actual"
+          echo "SRC_DIR=$dir" >> "$GITHUB_ENV"
+
+      - name: Setup Rust
+        if: steps.gate.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+
+      - name: Setup Android NDK
+        if: steps.gate.outputs.run == 'true'
+        uses: android-actions/setup-android@v4
+
+      - name: Setup rustup (like upstream ksud.yml)
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: |
+          rustup update stable
+          rustup target add aarch64-linux-android x86_64-linux-android aarch64-apple-darwin x86_64-apple-darwin || true
+          rustup target add aarch64-linux-android || true
+          rustup show
+
+      - name: Rust cache
+        if: steps.gate.outputs.run == 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: userspace/ksud
+          cache-targets: false
+          cache-bin: false
+
+      - name: Install cross (like upstream ksud.yml)
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: |
+          RUSTFLAGS="" cargo install cross --git https://github.com/cross-rs/cross --rev 66845c1 2>&1 | tail -20 || RUSTFLAGS="" cargo install cross --locked 2>&1 | tail -20 || true
+          cross --version || true
+
+      - name: Assemble LKM bootstrap (like upstream ksud.yml)
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="${{ env.SRC_DIR }}"
+          cd "$dir"
+          if [ -f userspace/ksud/src/lkm_image_bootstrap.S ]; then
+            clang --target=aarch64-linux-gnu -c -nostdlib -o userspace/ksud/.lkm_image_bootstrap.o userspace/ksud/src/lkm_image_bootstrap.S 2>&1 | tail -20 || echo "lkm bootstrap optional"
+            ls -lh userspace/ksud/.lkm_image_bootstrap.o 2>&1 | head -5 || true
+          else
+            echo "no lkm_image_bootstrap.S, skip"
+          fi
+
+      - name: Build ksud (aarch64 + x86_64 via cross)
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        env:
+          BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android: --sysroot=$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot -I$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android -I$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include
+          BINDGEN_EXTRA_CLANG_ARGS_x86_64_linux_android: --sysroot=$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot -I$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/x86_64-linux-android -I$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include
+        run: |
+          set -euo pipefail
+          dir="$SRC_DIR"
+          cd "$dir"
+          export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_NDK_ROOT}"
+          export ANDROID_NDK_ROOT="${ANDROID_NDK_ROOT:-$ANDROID_NDK_HOME}"
+          echo "NDK: $ANDROID_NDK_HOME"
+          # upstream ksud.yml uses cross, not cargo-ndk
+          for target in aarch64-linux-android x86_64-linux-android; do
+            echo "== cross build $target =="
+            CROSS_NO_WARNINGS=0 cross build --target "$target" --release --manifest-path ./userspace/ksud/Cargo.toml 2>&1 | tail -100 || echo "$target cross build failed — will still try manager without it"
+          done
+          mkdir -p "/tmp/ksud-out-${{ matrix.flavor }}/aarch64-linux-android/release" "/tmp/ksud-out-${{ matrix.flavor }}/x86_64-linux-android/release"
+          for p in "userspace/ksud/target/aarch64-linux-android/release/ksud" "target/aarch64-linux-android/release/ksud"; do [ -f "$p" ] && cp -fv "$p" "/tmp/ksud-out-${{ matrix.flavor }}/aarch64-linux-android/release/ksud" && break || true; done
+          for p in "userspace/ksud/target/x86_64-linux-android/release/ksud" "target/x86_64-linux-android/release/ksud"; do [ -f "$p" ] && cp -fv "$p" "/tmp/ksud-out-${{ matrix.flavor }}/x86_64-linux-android/release/ksud" && break || true; done
+          ls -lhR /tmp/ksud-out-${{ matrix.flavor }} 2>&1 | head -50 || true
+          echo "ksud build summary: aarch64=$(ls -l /tmp/ksud-out-${{ matrix.flavor }}/aarch64-linux-android/release/ksud 2>&1 | head -1); x86_64=$(ls -l /tmp/ksud-out-${{ matrix.flavor }}/x86_64-linux-android/release/ksud 2>&1 | head -1)"
+
+      - name: Upload ksud (${{ matrix.flavor }} aarch64)
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ksud-${{ matrix.flavor }}-aarch64-linux-android
+          path: /tmp/ksud-out-${{ matrix.flavor }}/aarch64-linux-android/release/ksud
+          if-no-files-found: ignore
+
+      - name: Upload ksud (${{ matrix.flavor }} x86_64)
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ksud-${{ matrix.flavor }}-x86_64-linux-android
+          path: /tmp/ksud-out-${{ matrix.flavor }}/x86_64-linux-android/release/ksud
+          if-no-files-found: ignore
+
+  # ── path B: build from source — mirror upstream exactly (clone + stock build reqs + key only) ──
+  # Each flavor mirrors its upstream build-manager workflow 1:1. No extra gradle.properties edits,
+  # no cargo LKM hacks — just checkout, write key (yours), setup Java/Gradle/SDK, spoof/randomizer if upstream does it, then ./gradlew.
+  build-from-source:
+    needs: build-ksud-from-source
+    if: ${{ always() && inputs.build_from_source }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - flavor: next
+            repo: https://github.com/KernelSU-Next/KernelSU-Next.git
+            ref: dev
+          - flavor: kernelsu
+            repo: https://github.com/tiann/KernelSU.git
+            ref: main
+          - flavor: resukisu
+            repo: https://github.com/ReSukiSU/ReSukiSU.git
+            ref: main
+          - flavor: sukisu-ultra
+            repo: https://github.com/SukiSU-Ultra/SukiSU-Ultra.git
+            ref: main
+          - flavor: kowsu
+            repo: https://github.com/KOWX712/KernelSU.git
+            ref: master
+          - flavor: next-susfs
+            repo: https://github.com/pershoot/KernelSU-Next.git
+            ref: dev-susfs
+    env:
+      FLAVOR: ${{ matrix.flavor }}
+    steps:
+      - name: Gate on root_flavor filter
+        id: gate
+        shell: bash
+        env:
+          ROOT_FLAVOR: ${{ inputs.root_flavor }}
+        run: |
+          WANT="${ROOT_FLAVOR:-All}"
+          FLAVOR="${{ matrix.flavor }}"
+          case "$WANT" in
+            All) echo "run=true" >> "$GITHUB_OUTPUT" ;;
+            KernelSU-Next) [[ "$FLAVOR" == "next" ]] && echo "run=true" >> "$GITHUB_OUTPUT" || echo "run=false" >> "$GITHUB_OUTPUT" ;;
+            KernelSU-Next-SUSFS) [[ "$FLAVOR" == "next-susfs" ]] && echo "run=true" >> "$GITHUB_OUTPUT" || echo "run=false" >> "$GITHUB_OUTPUT" ;;
+            KernelSU) [[ "$FLAVOR" == "kernelsu" ]] && echo "run=true" >> "$GITHUB_OUTPUT" || echo "run=false" >> "$GITHUB_OUTPUT" ;;
+            ReSukiSU) [[ "$FLAVOR" == "resukisu" ]] && echo "run=true" >> "$GITHUB_OUTPUT" || echo "run=false" >> "$GITHUB_OUTPUT" ;;
+            SukiSU-Ultra) [[ "$FLAVOR" == "sukisu-ultra" ]] && echo "run=true" >> "$GITHUB_OUTPUT" || echo "run=false" >> "$GITHUB_OUTPUT" ;;
+            KowSU) [[ "$FLAVOR" == "kowsu" ]] && echo "run=true" >> "$GITHUB_OUTPUT" || echo "run=false" >> "$GITHUB_OUTPUT" ;;
+            *) echo "run=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+          cat "$GITHUB_OUTPUT"
+
+      - name: Resolve commit for this flavor
+        if: steps.gate.outputs.run == 'true'
+        id: commit
+        shell: bash
+        env:
+          KSU_NEXT_COMMIT: ${{ inputs.kernelsu_next_commit }}
+          KSU_NEXT_SUSFS_COMMIT: ${{ inputs.kernelsu_next_susfs_commit }}
+          KSU_COMMIT: ${{ inputs.kernelsu_commit }}
+          RESUKISU_COMMIT: ${{ inputs.resukisu_commit }}
+          SUKISU_ULTRA_COMMIT: ${{ inputs.sukisu_ultra_commit }}
+        run: |
+          set -euo pipefail
+          flavor="${{ matrix.flavor }}"
+          case "$flavor" in
+            next) pin="$KSU_NEXT_COMMIT" ;;
+            next-susfs) pin="$KSU_NEXT_SUSFS_COMMIT" ;;
+            kernelsu) pin="$KSU_COMMIT" ;;
+            resukisu) pin="$RESUKISU_COMMIT" ;;
+            sukisu-ultra) pin="$SUKISU_ULTRA_COMMIT" ;;
+            kowsu) pin="" ;;
+          esac
+          if [[ -n "${pin:-}" ]]; then
+            if ! [[ "$pin" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "ERROR: pin must be 40-char SHA (got: $pin)" >&2; exit 1
+            fi
+            echo "sha=$pin" >> "$GITHUB_OUTPUT"
+            echo "Using pinned $flavor commit: $pin"
+          else
+            sha=$(git ls-remote "${{ matrix.repo }}" "refs/heads/${{ matrix.ref }}" | awk '{print $1; exit}')
+            if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "ERROR: failed to resolve latest SHA for $flavor" >&2; exit 1
+            fi
+            echo "sha=$sha" >> "$GITHUB_OUTPUT"
+            echo "Using latest $flavor tip on ${{ matrix.ref }}: $sha"
+          fi
+
+      - name: Clone ${{ matrix.flavor }} at pinned commit
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="${{ steps.commit.outputs.sha }}"
+          repo="${{ matrix.repo }}"
+          flavor="${{ matrix.flavor }}"
+          dir="/tmp/$flavor-src"
+          rm -rf "$dir"
+          # Mirror upstream checkout@v7 fetch-depth: 0 with all tags
+          # All 4 managers use git describe --tags --long / rev-list --count
+          git clone --no-checkout "$repo" "$dir"
+          # fetch all branches + all tags, full history (faithful to upstream)
+          git -C "$dir" fetch --prune --tags --force origin "+refs/heads/*:refs/remotes/origin/*" "+refs/tags/*:refs/tags/*" 2>&1 | tail -5 || true
+          git -C "$dir" checkout --detach "$sha"
+          actual=$(git -C "$dir" rev-parse HEAD)
+          if [[ "$actual" != "$sha" ]]; then
+            echo "Commit mismatch: expected $sha got $actual" >&2; exit 1
+          fi
+          echo "Cloned $flavor at $actual (describe: $(git -C "$dir" describe --tags --long HEAD 2>&1 | head -1) count: $(git -C "$dir" rev-list --count HEAD 2>&1 | head -1) tags: $(git -C "$dir" tag | wc -l))"
+          echo "SRC_DIR=$dir" >> "$GITHUB_ENV"
+
+      # ── Stock build requirements per upstream — no edits except key ──
+      - name: Setup Java 21
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Gradle
+        if: steps.gate.outputs.run == 'true'
+        uses: gradle/actions/setup-gradle@v5
+        # tiann/ReSukiSU use v6, Next uses v5 — v5 works for all, keep stock default
+
+      - name: Setup Android SDK
+        if: steps.gate.outputs.run == 'true'
+        uses: android-actions/setup-android@v4
+        # ReSukiSU/Next use v3/v4 — v3 is the common baseline
+
+      - name: Download ksud aarch64 (Next/pershoot, like upstream)
+        if: steps.gate.outputs.run == 'true' && (matrix.flavor == 'next' || matrix.flavor == 'next-susfs')
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: ksud-${{ matrix.flavor }}-aarch64-linux-android
+          path: /tmp/ksud-dl-aarch64
+
+      - name: Download ksud x86_64 (Next/pershoot, like upstream)
+        if: steps.gate.outputs.run == 'true' && (matrix.flavor == 'next' || matrix.flavor == 'next-susfs')
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: ksud-${{ matrix.flavor }}-x86_64-linux-android
+          path: /tmp/ksud-dl-x86_64
+
+      - name: Copy ksud to jniLibs (like upstream build-manager)
+        if: steps.gate.outputs.run == 'true' && (matrix.flavor == 'next' || matrix.flavor == 'next-susfs')
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="/tmp/${{ matrix.flavor }}-src/manager"
+          mkdir -p "$dir/app/src/main/jniLibs/arm64-v8a" "$dir/app/src/main/jniLibs/x86_64"
+          for p in "/tmp/ksud-dl-aarch64/ksud" "/tmp/ksud-dl-aarch64/aarch64-linux-android/release/ksud"; do [ -f "$p" ] && cp -fv "$p" "$dir/app/src/main/jniLibs/arm64-v8a/libksud.so" && echo "copied aarch64 ksud" && break || true; done
+          # fallback search
+          if [ ! -f "$dir/app/src/main/jniLibs/arm64-v8a/libksud.so" ]; then f=$(find /tmp/ksud-dl-aarch64 -type f -name ksud 2>/dev/null | head -1 || true); [ -n "${f:-}" ] && cp -fv "$f" "$dir/app/src/main/jniLibs/arm64-v8a/libksud.so" || echo "no aarch64 ksud — manager will build without it"; fi
+          for p in "/tmp/ksud-dl-x86_64/ksud" "/tmp/ksud-dl-x86_64/x86_64-linux-android/release/ksud"; do [ -f "$p" ] && cp -fv "$p" "$dir/app/src/main/jniLibs/x86_64/libksud.so" && echo "copied x86_64 ksud" && break || true; done
+          if [ ! -f "$dir/app/src/main/jniLibs/x86_64/libksud.so" ]; then f=$(find /tmp/ksud-dl-x86_64 -type f -name ksud 2>/dev/null | head -1 || true); [ -n "${f:-}" ] && cp -fv "$f" "$dir/app/src/main/jniLibs/x86_64/libksud.so" || echo "no x86_64 ksud — manager will build without it"; fi
+          ls -lh "$dir/app/src/main/jniLibs"/*/* 2>&1 | head -20 || echo "no jniLibs"
+
+      - name: Spoof Package ID (Next only, like upstream build-manager-ci)
+        if: steps.gate.outputs.run == 'true' && (matrix.flavor == 'next' || matrix.flavor == 'next-susfs')
+        shell: bash
+        working-directory: /tmp/${{ matrix.flavor }}-src/manager
+        run: |
+          # Upstream Next builds two variants; for build-from-source we build one normal + one spoofed sequentially
+          # This step just prepares — actual spoof run happens in Build step
+          if [ -x ./spoof ]; then echo "spoof present"; else echo "no spoof script"; fi
+
+      - name: Randomizer check (ReSukiSU only, like upstream)
+        if: steps.gate.outputs.run == 'true' && matrix.flavor == 'resukisu'
+        shell: bash
+        working-directory: /tmp/${{ matrix.flavor }}-src/manager
+        run: |
+          if [ -x ./randomizer ]; then chmod +x ./randomizer; ls -l ./randomizer; else echo "no randomizer"; fi
+
+      - name: Build Manager APK(s) — stock gradle, key only
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        working-directory: /tmp/${{ matrix.flavor }}-src
+        env:
+          NEXT_KEYSTORE: ${{ secrets.NEXT_KEYSTORE }}
+          NEXT_KEYSTORE_PASSWORD: ${{ secrets.NEXT_KEYSTORE_PASSWORD }}
+          NEXT_KEY_ALIAS: ${{ secrets.NEXT_KEY_ALIAS }}
+          NEXT_KEY_PASSWORD: ${{ secrets.NEXT_KEY_PASSWORD }}
+          KERNELSU_KEYSTORE: ${{ secrets.KERNELSU_KEYSTORE }}
+          KERNELSU_KEYSTORE_PASSWORD: ${{ secrets.KERNELSU_KEYSTORE_PASSWORD }}
+          KERNELSU_KEY_ALIAS: ${{ secrets.KERNELSU_KEY_ALIAS }}
+          KERNELSU_KEY_PASSWORD: ${{ secrets.KERNELSU_KEY_PASSWORD }}
+          RESUKISU_KEYSTORE: ${{ secrets.RESUKISU_KEYSTORE }}
+          RESUKISU_KEYSTORE_PASSWORD: ${{ secrets.RESUKISU_KEYSTORE_PASSWORD }}
+          RESUKISU_KEY_ALIAS: ${{ secrets.RESUKISU_KEY_ALIAS }}
+          RESUKISU_KEY_PASSWORD: ${{ secrets.RESUKISU_KEY_PASSWORD }}
+          SUKISU_ULTRA_KEYSTORE: ${{ secrets.SUKISU_ULTRA_KEYSTORE }}
+          SUKISU_ULTRA_KEYSTORE_PASSWORD: ${{ secrets.SUKISU_ULTRA_KEYSTORE_PASSWORD }}
+          SUKISU_ULTRA_KEY_ALIAS: ${{ secrets.SUKISU_ULTRA_KEY_ALIAS }}
+          SUKISU_ULTRA_KEY_PASSWORD: ${{ secrets.SUKISU_ULTRA_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          dir="$SRC_DIR"
+          cd "$dir"
+          flavor="$FLAVOR"
+          echo "== Stock build for $flavor at $dir =="
+          if [ ! -d manager ]; then
+            echo "No manager/ directory — skipping" >&2; exit 0
+          fi
+          cd manager
+          # ── Key only (minimal edit) ──
+          resolve_key() {
+            local b64 pw alias kp
+            case "$flavor" in
+              next|next-susfs) b64="${NEXT_KEYSTORE:-}"; pw="${NEXT_KEYSTORE_PASSWORD:-}"; alias="${NEXT_KEY_ALIAS:-}"; kp="${NEXT_KEY_PASSWORD:-}" ;;
+              kernelsu) b64="${KERNELSU_KEYSTORE:-}"; pw="${KERNELSU_KEYSTORE_PASSWORD:-}"; alias="${KERNELSU_KEY_ALIAS:-}"; kp="${KERNELSU_KEY_PASSWORD:-}" ;;
+              resukisu) b64="${RESUKISU_KEYSTORE:-}"; pw="${RESUKISU_KEYSTORE_PASSWORD:-}"; alias="${RESUKISU_KEY_ALIAS:-}"; kp="${RESUKISU_KEY_PASSWORD:-}" ;;
+              sukisu-ultra) b64="${SUKISU_ULTRA_KEYSTORE:-}"; pw="${SUKISU_ULTRA_KEYSTORE_PASSWORD:-}"; alias="${SUKISU_ULTRA_KEY_ALIAS:-}"; kp="${SUKISU_ULTRA_KEY_PASSWORD:-}" ;;
+            esac
+            if [ -n "${b64:-}" ] && [ -n "${pw:-}" ] && [ -n "${alias:-}" ]; then
+              echo "Using your persistent key for $flavor (alias=$alias)"
+              echo "$b64" | base64 -d > "/tmp/manager-$flavor.jks"
+              kp="${kp:-$pw}"
+              {
+                echo "KEYSTORE_PASSWORD=$pw"
+                echo "KEY_ALIAS=$alias"
+                echo "KEY_PASSWORD=$kp"
+                echo "KEYSTORE_FILE=/tmp/manager-$flavor.jks"
+              } >> gradle.properties
+              return 0
+            fi
+            return 1
+          }
+          if ! resolve_key; then
+            echo "No persistent key for $flavor — using ephemeral debug keystore (tmp123) like upstream PR builds"
+            if [ ! -f key.jks ] && [ ! -f ../key.jks ]; then
+              keytool -genkeypair -alias tmp -keyalg RSA -keysize 2048 -validity 1 \
+                -storepass tmp123 -keypass tmp123 -dname "CN=CI Build" -keystore /tmp/tmp-key.jks -storetype JKS 2>&1 | tail -3 || true
+              if [ -f /tmp/tmp-key.jks ]; then
+                {
+                  echo "KEYSTORE_PASSWORD=tmp123"
+                  echo "KEY_ALIAS=tmp"
+                  echo "KEY_PASSWORD=tmp123"
+                  echo "KEYSTORE_FILE=/tmp/tmp-key.jks"
+                } >> gradle.properties
+              fi
+            fi
+          fi
+          echo "--- manager/gradle.properties (stock + key only) ---"
+          cat gradle.properties || true
+          # ── Stock gradle invocation per upstream ──
+          gradle_build() {
+            local task="$1"
+            echo ">> ./gradlew $task"
+            set -o pipefail
+            if ! ./gradlew $task 2>&1 | tee /tmp/gradle-$flavor.log; then
+              echo "--- gradle $task FAILED for $flavor ---" >&2
+              tail -n 200 /tmp/gradle-$flavor.log 2>/dev/null || true
+              return 1
+            fi
+          }
+          # Flavor-specific stock commands (mirror upstream files verbatim)
+          if [ "$flavor" = "next" ] || [ "$flavor" = "next-susfs" ]; then
+            # Upstream Next: ./gradlew clean assembleRelease (+ spoof variant)
+            # Build normal
+            ok=false
+            if gradle_build "clean assembleRelease"; then ok=true; fi
+            # Spoof variant if present (upstream does matrix spoofed=true/false)
+            if [ -x ./spoof ]; then
+              echo "Building spoofed variant (upstream match)"
+              chmod +x ./spoof; ./spoof || true
+              if gradle_build "clean assembleRelease"; then
+                for apk in app/build/outputs/apk/release/*.apk; do [ -f "$apk" ] && cp -f "$apk" "/tmp/next-spoofed.apk" || true; done
+                ok=true
+              fi
+              git checkout -- app/src/main/java 2>/dev/null || git checkout -- . 2>/dev/null || true
+            fi
+            if ! $ok; then echo "ERROR: Next gradle failed" >&2; tail -n 300 /tmp/gradle-$flavor.log; exit 1; fi
+          elif [ "$flavor" = "kernelsu" ]; then
+            # Upstream tiann: ./gradlew clean assembleRelease (repack is separate job — we just build manager here)
+            gradle_build "clean assembleRelease" || gradle_build "assembleRelease" || true
+          elif [ "$flavor" = "kowsu" ]; then
+            # Upstream KowSU is tiann-style: clean assembleRelease
+            gradle_build "clean assembleRelease" || gradle_build "assembleRelease" || true
+          elif [ "$flavor" = "resukisu" ]; then
+            # Upstream ReSukiSU: assembleRelease + randomizer (only universal variants)
+            gradle_build "clean assembleRelease" || true
+            # skip assembleDebug — only release universal and universal spoofed
+            if [ -x ./randomizer ]; then
+              ./randomizer 2>&1 | tail -20 || true
+              gradle_build "clean assembleRelease" || true
+            fi
+          elif [ "$flavor" = "sukisu-ultra" ]; then
+            # Upstream SukiSU-Ultra: clean assembleRelease, spoofed via randomizer
+            gradle_build "clean assembleRelease" || true
+            if [ -x ./randomizer ]; then
+              ./randomizer 2>&1 | tail -20 || true
+              gradle_build "clean assembleRelease" || true
+            fi
+          fi
+          # Collect (only release variants for resukisu)
+          out="/tmp/manager_apks_${flavor}"
+          mkdir -p "$out"
+          if [ "$flavor" = "resukisu" ]; then
+            for apk in app/build/outputs/apk/release/*.apk; do
+              [ -f "$apk" ] || continue
+              cp -f "$apk" "$out/${flavor}-$(basename "$apk")"
+              echo "Collected $out/${flavor}-$(basename "$apk")"
+            done
+            # Filter resukisu to only universal + not debug (release universal and universal spoofed)
+            for f in "$out"/*.apk; do
+              [ -f "$f" ] || continue
+              ln=$(basename "$f" | tr '[:upper:]' '[:lower:]')
+              if [[ "$ln" != *universal* ]]; then echo "Dropping resukisu non-universal $(basename "$f")" >&2; rm -f "$f"; continue; fi
+              if [[ "$ln" == *debug* ]]; then echo "Dropping resukisu debug $(basename "$f")" >&2; rm -f "$f"; continue; fi
+            done
+          else
+            for apk in app/build/outputs/apk/release/*.apk app/build/outputs/apk/debug/*.apk; do
+              [ -f "$apk" ] || continue
+              cp -f "$apk" "$out/${flavor}-$(basename "$apk")"
+              echo "Collected $out/${flavor}-$(basename "$apk")"
+            done
+          fi
+          if [ -f /tmp/next-spoofed.apk ]; then cp -f /tmp/next-spoofed.apk "$out/${flavor}-spoofed.apk" || true; fi
+          ls -lh "$out" 2>&1 | head -30 || true
+          if [ -z "$(ls -A "$out" 2>/dev/null)" ]; then echo "WARNING: no APK produced for $flavor" >&2; fi
+          echo "MANAGER_OUT_$flavor=$out" >> "$GITHUB_ENV"
+
+      - name: Upload gradle logs (${{ matrix.flavor }})
+        if: always() && steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: gradle-log-${{ matrix.flavor }}
+          path: /tmp/gradle-*.log
+          if-no-files-found: ignore
+
+      - name: Upload built manager APKs (${{ matrix.flavor }})
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: manager-apks-src-${{ matrix.flavor }}
+          path: /tmp/manager_apks_${{ matrix.flavor }}/*.apk
+          if-no-files-found: ignore
+
+    # Collector for source-built managers: merge per-flavor uploads into one cross-blob
+  # so downstream consumers can use the same artifact name regardless of path.
+  collect-source-managers:
+    needs: build-from-source
+    if: ${{ inputs.build_from_source }}
+    runs-on: ubuntu-latest
+    outputs:
+      apk_list: ${{ steps.scan.outputs.apk_list }}
+    steps:
+      - name: Download all source-built manager artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: manager-apks-src-*
+          path: manager_apks
+          merge-multiple: true
+
+      - name: Scan collected APKs
+        id: scan
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p manager_apks
+          find manager_apks -type f -name '*.apk' | sort | tee /tmp/list.txt || true
+          # Filter ReSukiSU to only universal release and universal spoofed
+          if grep -qi "resukisu" /tmp/list.txt 2>/dev/null; then
+            tmp_list="/tmp/list.filtered"
+            : > "$tmp_list"
+            while IFS= read -r f; do
+              [ -n "$f" ] || continue
+              ln=$(basename "$f" | tr '[:upper:]' '[:lower:]')
+              if [[ "$ln" == *resukisu* ]]; then
+                if [[ "$ln" != *universal* ]]; then echo "Dropping resukisu non-universal $f" >&2; rm -f "$f"; continue; fi
+                if [[ "$ln" == *debug* ]]; then echo "Dropping resukisu debug $f" >&2; rm -f "$f"; continue; fi
+              fi
+              echo "$f" >> "$tmp_list"
+            done < /tmp/list.txt
+            mv "$tmp_list" /tmp/list.txt
+          fi
+          count=$(wc -l < /tmp/list.txt 2>/dev/null | tr -d ' ' || echo 0)
+          echo "Found $count source-built manager APKs"
+          ls -lh manager_apks 2>&1 | head -40 || true
+          APK_JSON="[]"
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            n="$(basename "$f")"
+            APK_JSON=$(echo "$APK_JSON" | jq -c --arg n "$n" '. + [{apk:$n}]')
+          done < /tmp/list.txt
+          echo "apk_list=${APK_JSON}" >> "$GITHUB_OUTPUT"
+          echo "Found $(wc -l < /tmp/list.txt 2>/dev/null | tr -d ' ' || echo 0) source-built manager APKs"
+
+      - name: Upload merged manager-apks (source)
+        uses: actions/upload-artifact@v7
+        with:
+          name: manager-apks
+          path: manager_apks/
+          if-no-files-found: ignore
+
+  # Unified publisher: works for both fetch and source paths (whichever produced manager-apks)
+  # Skips entirely when apk_list is empty/[] to avoid "Matrix vector item does not contain any values" (Line 818 col 15)
+  publish-manager-artifacts:
+    needs:
+      - list-manager-apks
+      - collect-source-managers
+    if: ${{ always() && ( (needs.list-manager-apks.outputs.apk_list != '' && needs.list-manager-apks.outputs.apk_list != '[]') || (needs.collect-source-managers.outputs.apk_list != '' && needs.collect-source-managers.outputs.apk_list != '[]') ) }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        item: ${{ fromJson(needs.list-manager-apks.outputs.apk_list != '' && needs.list-manager-apks.outputs.apk_list != '[]' && needs.list-manager-apks.outputs.apk_list || needs.collect-source-managers.outputs.apk_list) }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download manager cross-blob
+        uses: actions/download-artifact@v7
+        with:
+          name: manager-apks
+          path: manager_apks
+          merge-multiple: true
+
+      - name: Upload ${{ matrix.item.apk }} as its own artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.item.apk }}
+          path: manager_apks/${{ matrix.item.apk }}
+          if-no-files-found: error
+
+  notes-preview:
+    if: always()
+    needs: [resolve-managers, build-ksud-from-source, build-from-source, collect-source-managers, list-manager-apks, publish-manager-artifacts]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Render release notes preview
+        env:
+          ROOT_FLAVOR: ${{ inputs.root_flavor }}
+          BUILD_FROM_SOURCE: ${{ inputs.build_from_source }}
+          NEXT_COMMIT: ${{ inputs.kernelsu_next_commit }}
+          KSU_COMMIT: ${{ inputs.kernelsu_commit }}
+          RESUKISU_COMMIT: ${{ inputs.resukisu_commit }}
+          SUKISU_ULTRA_COMMIT: ${{ inputs.sukisu_ultra_commit }}
+          NEXT_SUSFS_COMMIT: ${{ inputs.kernelsu_next_susfs_commit }}
+          MANAGER_LIST_FETCH: ${{ needs.resolve-managers.outputs.manager_list }}
+        run: |
+          set -e
+          python3 - <<'PYEOF' > release_body.md
+          import json, os
+          def env(k, d=""):
+              return os.environ.get(k, d).strip()
+          root = env("ROOT_FLAVOR", "All")
+          src = env("BUILD_FROM_SOURCE", "false") == "true"
+          commits = {
+              "KernelSU-Next": env("NEXT_COMMIT") or "latest dev tip",
+              "KernelSU": env("KSU_COMMIT") or "latest main tip",
+              "ReSukiSU": env("RESUKISU_COMMIT") or "latest tip",
+              "SukiSU-Ultra": env("SUKISU_ULTRA_COMMIT") or "latest tip",
+              "KowSU": "latest tip",
+              "KernelSU-Next-SUSFS": env("NEXT_SUSFS_COMMIT") or "latest dev-susfs tip",
+          }
+          # enrich from fetch path manager_list (pure commit info, same style as prebuilt)
+          raw = env("MANAGER_LIST_FETCH")
+          if raw:
+              try:
+                  for m in json.loads(raw):
+                      label = {"next":"KernelSU-Next","kernelsu":"KernelSU","resukisu":"ReSukiSU","sukisu-ultra":"SukiSU-Ultra","kowsu":"KowSU","next-susfs":"KernelSU-Next-SUSFS"}.get(m.get("flavor",""), "")
+                      if label and m.get("stock"):
+                          commits[label] = m["stock"]
+              except: pass
+          lines = []
+          lines.append("# Managers — Release Notes Preview")
+          lines.append("")
+          lines.append("## Features")
+          lines.append("")
+          if root == "All":
+              lines.append("- All manager flavors (KernelSU-Next, KernelSU, ReSukiSU, SukiSU-Ultra, KernelSU-Next-SUSFS)")
+          else:
+              lines.append(f"- {root}")
+          lines.append(f"- {'Built from source' if src else 'Fetched prebuilt (upstream CI)'}")
+          lines.append("")
+          lines.append("## Commits")
+          lines.append("")
+          for k, v in commits.items():
+              if len(v) == 40:
+                  lines.append(f"- **{k}:** `{v[:12]}` `{v}`")
+              else:
+                  lines.append(f"- **{k}:** `{v}`")
+          output = "\n".join(lines) + "\n"
+          print(output, end="")
+          s = os.environ.get("GITHUB_STEP_SUMMARY")
+          if s:
+              open(s, "a").write(output)
+          PYEOF
+          cat release_body.md
+
+      - name: Upload release notes preview artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-notes-preview
+          path: release_body.md
+          retention-days: 7
+          if-no-files-found: ignore

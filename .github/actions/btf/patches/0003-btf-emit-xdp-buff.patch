@@ -1,0 +1,24 @@
+--- a/net/core/xdp.c
++++ b/net/core/xdp.c
+@@ -12,6 +12,7 @@
+ #include <linux/idr.h>
+ #include <linux/rhashtable.h>
+ #include <linux/bug.h>
++#include <linux/btf.h>
+ #include <net/page_pool.h>
+ 
+ #include <net/xdp.h>
+@@ -387,6 +388,13 @@
+ void xdp_return_buff(struct xdp_buff *xdp)
+ {
+ 	__xdp_return(xdp->data, &xdp->rxq->mem, true, xdp);
++	/* xdp_buff is referenced via BTF_ID_LIST_SINGLE(bpf_xdp_output_btf_ids)
++	 * in net/core/filter.c but is not otherwise emitted into vmlinux BTF,
++	 * so resolve_btfids aborts with "unresolved symbol xdp_buff". Force BTF
++	 * emission here where the struct is complete (this file includes both
++	 * <net/xdp.h> for the type and <linux/btf.h> for BTF_TYPE_EMIT). */
++	BTF_TYPE_EMIT(struct xdp_buff);
++
+ }
+ 
+ /* Only called for MEM_TYPE_PAGE_POOL see xdp.h */

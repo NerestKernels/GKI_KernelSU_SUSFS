@@ -1,0 +1,27 @@
+name: 'Setup CIFS Configs'
+description: 'Enable CIFS/network filesystem kernel configs and apply version-specific fixes'
+inputs:
+  version:
+    description: 'Kernel config version (e.g., android16-6.12)'
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Enable CIFS Configs
+      uses: ./.github/actions/set-kernel-config
+      with:
+        config_list: |
+          CONFIG_CIFS=y
+          CONFIG_NETWORK_FILESYSTEMS=y
+          CONFIG_NETFS_SUPPORT=y
+          CONFIG_KEYS=y
+          CONFIG_CIFS_XATTR=y
+          CONFIG_CIFS_POSIX=y
+
+    - name: Fix CIFS on android16-6.12
+      shell: bash
+      working-directory: ${{ github.workspace }}/kernel/common
+      if: inputs.version == 'android16-6.12'
+      run: |
+        sed -i '/"fs\/netfs\/netfs\.ko",/d' modules.bzl

@@ -1,0 +1,53 @@
+name: 'Apply NTSync Patches'
+description: 'Apply ntsync compatibility patches and enable CONFIG_NTSYNC in defconfig'
+inputs:
+  version:
+    description: 'Kernel config version (e.g., android14-6.12)'
+    required: true
+  kernel_version:
+    description: 'Kernel version (e.g., 6.1)'
+    required: true
+  sublevel:
+    description: 'Kernel sublevel'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Apply NTSync Patch
+      shell: bash
+      working-directory: ${{ github.workspace }}/kernel/common
+      run: |
+        set -euo pipefail
+
+        if [[ ${{ inputs.version }} = "android16-6.12" ]]; then
+          echo "Removing pre-existing ntsync files for android16-6.12"
+          rm -f include/uapi/linux/ntsync.h
+          rm -f drivers/misc/ntsync.c
+        fi
+
+        # Apply lockdep prerequisites for android12-5.10 (2022-01 baseline)
+        if [[ ${{ inputs.version }} == "android12-5.10" && "${{ inputs.sublevel }}" -le "66" ]]; then
+          patch -p1 -N < ${{ github.action_path }}/patches/0001-lockdep-detect-recursive-read.patch
+        fi
+
+        if [[ ( "${{ inputs.version }}" == "android12-5.10" && "${{ inputs.sublevel }}" -le "209" ) || ( "${{ inputs.version }}" == "android13-5.10" && "${{ inputs.sublevel }}" -le "210" ) ]]; then
+          patch -p1 -N < ${{ github.action_path }}/patches/0002-lockdep-assert-none-held.patch
+        fi
+
+        if [[ ${{ inputs.version }} = "android13-5.10" ]]; then
+          patch -p1 < ${{ github.workspace }}/kernel_patches/common/ntsync/ntsync_compat_android12-5.10.patch
+        elif [[ ${{ inputs.version }} = "android14-5.15" ]]; then
+          patch -p1 < ${{ github.workspace }}/kernel_patches/common/ntsync/ntsync_compat_android13-5.15.patch
+        else
+          patch -p1 < ${{ github.workspace }}/kernel_patches/common/ntsync/ntsync_compat_${{ inputs.version }}.patch
+        fi
+
+        patch -p1 < ${{ github.workspace }}/kernel_patches/common/ntsync/ntsync_base.patch
+
+    - name: Enable NTSync
+      uses: ./.github/actions/set-kernel-config
+      with:
+        config_list: |
+          CONFIG_NTSYNC=y
+  

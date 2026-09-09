@@ -1,0 +1,41 @@
+name: Clear Cache Releases
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type DELETE to confirm wiping all General Cache releases'
+        type: string
+        default: ''
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  clear-cache:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify confirmation
+        run: |
+          if [ "${{ inputs.confirm }}" != "DELETE" ]; then
+            echo "Refusing: confirm input must be DELETE (got '${{ inputs.confirm }}')." >&2
+            exit 1
+          fi
+
+      - name: Delete all General Cache releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAGS=$(gh release list --limit 1000 --json tagName,name --jq -r '.[] | select(.name == "General Cache") | .tagName')
+          if [ -z "$TAGS" ]; then
+            echo "No General Cache releases found. Nothing to do."
+            exit 0
+          fi
+          echo "$TAGS" | while read -r tag; do
+            [ -n "$tag" ] || continue
+            echo "Deleting release + tag: $tag"
+            gh release delete "$tag" --cleanup-tag -y || echo "WARNING: failed to delete $tag (continuing)"
+          done
+          echo "Done."

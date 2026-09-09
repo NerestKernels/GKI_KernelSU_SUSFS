@@ -1,0 +1,43 @@
+From f8b361d17da5fa125a9e788d3088599216f33019 Mon Sep 17 00:00:00 2001
+From: Greg Kroah-Hartman <gregkh@google.com>
+Date: Tue, 28 Sep 2021 14:38:19 +0200
+Subject: [PATCH] ANDROID: GKI: rework the ANDROID_KABI_USE() macro to not use
+ __UNIQUE()
+
+The __UNIQUE_ID() macro causes problems as it turns out to not be
+deterministic across different compiler runs as it relies on the
+__COUNTER__ macro which could have been used on other .h files previous
+to this .h file being included.
+
+This shows up specifically when building with "LTO=thin" vs. "LTO=full"
+as different build paths seem to be triggered.
+
+As the structure name isn't really needed at all here, we were just
+including it for older compilers that could not handle anonymous
+structures in a union, just drop the whole thing which resolves the abi
+naming issue.
+
+Bug: 210255585
+Reported-by: Giuliano Procida <gprocida@google.com>
+Signed-off-by: Greg Kroah-Hartman <gregkh@google.com>
+Change-Id: I6b9449fa9d26ffc5d66b2f0f3b41e2d5f3003f68
+---
+ include/linux/android_kabi.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/include/linux/android_kabi.h b/include/linux/android_kabi.h
+index efa52953fe35..9c7b6c035ad3 100644
+--- a/include/linux/android_kabi.h
++++ b/include/linux/android_kabi.h
+@@ -63,7 +63,7 @@
+ 		_new;						\
+ 		struct {					\
+ 			_orig;					\
+-		} __UNIQUE_ID(android_kabi_hide);		\
++		};						\
+ 		__ANDROID_KABI_CHECK_SIZE_ALIGN(_orig, _new);	\
+ 	}
+ 
+-- 
+2.55.0
+

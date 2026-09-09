@@ -1,0 +1,190 @@
+name: 'Apply Device-Specific Patches'
+description: 'Apply WiFi/Bluetooth fixes for Samsung and Xiaomi 6.6 GKI devices'
+
+inputs:
+  version:
+    description: 'Kernel config version (e.g., android15-6.6)'
+    required: true
+  kernel_version:
+    description: 'Kernel version (e.g., 6.6)'
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Fix WiFi and Bluetooth on Samsung 6.6 GKI Devices
+      if: inputs.version == 'android15-6.6'
+      shell: bash
+      working-directory: ${{ github.workspace }}/kernel/common
+      run: |
+        set -euo pipefail
+
+        PATCH="${{ github.workspace }}/kernel_patches/samsung/min_kdp/add-min_kdp-symbols.patch"
+        MIN_KDP="${{ github.workspace }}/kernel_patches/samsung/min_kdp/min_kdp.c"
+        test -f "$PATCH" || { echo "Missing Samsung min_kdp patch: $PATCH" >&2; exit 1; }
+        test -f "$MIN_KDP" || { echo "Missing Samsung min_kdp source: $MIN_KDP" >&2; exit 1; }
+
+        SYMBOL_LIST=android/abi_gki_aarch64_galaxy
+        TRANSACTION_DIR="$(mktemp -d)"
+        BACKUP_DIR="$TRANSACTION_DIR/original"
+        STAGE_DIR="$TRANSACTION_DIR/stage"
+        TRANSACTION_COMMITTED=false
+        declare -a TRANSACTION_PATHS
+        TRANSACTION_PATH_COUNT=0
+
+        add_transaction_path() {
+          local path="$1"
+          case "$path" in
+            /dev/null|..|../*|*/../*|/*)
+              echo "Unsafe Samsung patch path: $path" >&2
+              exit 1
+              ;;
+          esac
+          local index existing
+          for ((index = 0; index < TRANSACTION_PATH_COUNT; index++)); do
+            existing="${TRANSACTION_PATHS[index]}"
+            [ "$existing" = "$path" ] && return
+          done
+          TRANSACTION_PATHS[TRANSACTION_PATH_COUNT]="$path"
+          TRANSACTION_PATH_COUNT=$((TRANSACTION_PATH_COUNT + 1))
+        }
+
+        restore_transaction() {
+          set +e
+          set +u
+          if [ "$TRANSACTION_COMMITTED" = true ]; then
+            rm -rf "$TRANSACTION_DIR"
+            return
+          fi
+          local index path
+          for ((index = 0; index < TRANSACTION_PATH_COUNT; index++)); do
+            path="${TRANSACTION_PATHS[index]}"
+            if [[ -e "$BACKUP_DIR/$path" || -L "$BACKUP_DIR/$path" ]]; then
+              rm -rf "$path"
+              mkdir -p "$(dirname "$path")"
+              cp -a "$BACKUP_DIR/$path" "$path"
+            else
+              rm -rf "$path"
+            fi
+          done
+          rm -rf "$TRANSACTION_DIR"
+        }
+        trap restore_transaction EXIT
+
+        PATCH_PATHS=()
+        while IFS= read -r path; do
+          [ -n "$path" ] && PATCH_PATHS+=("$path")
+        done < <(awk '/^(---|\+\+\+) / { path=$2; sub(/^[ab]\//, "", path); print path }' "$PATCH" | sort -u)
+        for path in "${PATCH_PATHS[@]}"; do
+          add_transaction_path "$path"
+        done
+        add_transaction_path "$SYMBOL_LIST"
+        add_transaction_path drivers/min_kdp.c
+        add_transaction_path drivers/Makefile
+
+        for path in "${TRANSACTION_PATHS[@]}"; do
+          if [[ -e "$path" || -L "$path" ]]; then
+            mkdir -p "$BACKUP_DIR/$(dirname "$path")" "$STAGE_DIR/$(dirname "$path")"
+            cp -a "$path" "$BACKUP_DIR/$path"
+            cp -a "$path" "$STAGE_DIR/$path"
+          else
+            mkdir -p "$STAGE_DIR/$(dirname "$path")"
+          fi
+        done
+
+        (
+          cd "$STAGE_DIR"
+          if patch -p1 --dry-run < "$PATCH" 2>/dev/null; then
+            patch -p1 --no-backup-if-mismatch < "$PATCH"
+          else
+            echo "Rigid .stg patch failed (upstream drift), falling back to idempotent insert"
+            python3 - android/abi_gki_aarch64.stg <<'PYEOF'
+        import sys
+        stg_path = sys.argv[1]
+        with open(stg_path) as f:
+            src = f.read()
+        def ensure_before(anchor, block, label):
+            global src
+            if label in src:
+                print(f"already present: {label}")
+                return
+            if anchor in src:
+                src = src.replace(anchor, block + anchor, 1)
+                print(f"inserted {label} at anchor")
+            else:
+                # STG text format is order-insensitive: append as last resort
+                if not src.endswith('\n'):
+                    src += '\n'
+                src += block
+                print(f"inserted {label} at EOF (anchor missing)")
+        func1 = ('function {\n  id: 0x1e5195df\n  return_type_id: 0x48b5725f\n'
+                 '  parameter_id: 0x3d551c03\n  parameter_id: 0x6720d32f\n}\n')
+        func2 = ('function {\n  id: 0xc18e39fb\n  return_type_id: 0x4585663f\n'
+                 '  parameter_id: 0x3d551c03\n}\n')
+        elf1 = ('elf_symbol {\n  id: 0xb0801f6e\n  name: "kdp_set_cred_non_rcu"\n  is_defined: true\n'
+                '  symbol_type: FUNCTION\n  crc: 0x738bae5e\n  type_id: 0x1e5195df\n'
+                '  full_name: "kdp_set_cred_non_rcu"\n}\n')
+        elf2 = ('elf_symbol {\n  id: 0x3037c5bc\n  name: "kdp_usecount_dec_and_test"\n  is_defined: true\n'
+                '  symbol_type: FUNCTION\n  crc: 0xda582aa5\n  type_id: 0xc18e39fb\n'
+                '  full_name: "kdp_usecount_dec_and_test"\n}\n')
+        elf3 = ('elf_symbol {\n  id: 0x8334a496\n  name: "kdp_usecount_inc"\n  is_defined: true\n'
+                '  symbol_type: FUNCTION\n  crc: 0xfb342499\n  type_id: 0x1fcd1693\n'
+                '  full_name: "kdp_usecount_inc"\n}\n')
+        ensure_before('function {\n  id: 0x1e571002', func1, 'id: 0x1e5195df')
+        ensure_before('function {\n  id: 0xc18f1240', func2, 'id: 0xc18e39fb')
+        elf_anchor = 'elf_symbol {\n  id: 0x493ce9fc\n  name: "loops_per_jiffy"'
+        for block, label in [(elf1, '"kdp_set_cred_non_rcu"'), (elf2, '"kdp_usecount_dec_and_test"'), (elf3, '"kdp_usecount_inc"')]:
+            ensure_before(elf_anchor, block, label)
+        # interface symbol_ids must land inside the interface block
+        iface_ids = ['0xb0801f6e', '0x3037c5bc', '0x8334a496']
+        missing = [i for i in iface_ids if f'symbol_id: {i}' not in src]
+        if missing:
+            lines = [f'  symbol_id: {i}\n' for i in missing]
+            # 0xc750a072 exists in all snapshots (incl. 2024-09 where
+            # 0x132eb5f1 is missing upstream); insert right after it.
+            anchor = '  symbol_id: 0xc750a072\n'
+            if anchor in src:
+                src = src.replace(anchor, anchor + ''.join(lines), 1)
+                print(f"inserted interface ids after 0xc750a072: {missing}")
+            else:
+                idx = src.find('interface {')
+                assert idx != -1, 'interface block not found in .stg'
+                end = src.find('\n}\n', idx)
+                assert end != -1, 'interface block close not found'
+                src = src[:end] + ''.join(lines).rstrip('\n') + src[end:]
+                print(f"inserted interface ids before interface close: {missing}")
+        else:
+            print('interface ids already present')
+        with open(stg_path, 'w') as f:
+            f.write(src)
+        print('fallback .stg insert done')
+        PYEOF
+          fi
+          printf '%s\n' \
+            'kdp_set_cred_non_rcu' \
+            'kdp_usecount_dec_and_test' \
+            'kdp_usecount_inc' >> "$SYMBOL_LIST"
+          cp "$MIN_KDP" drivers/min_kdp.c
+          if ! grep -Fqx 'obj-y += min_kdp.o' drivers/Makefile; then
+            printf '%s\n' 'obj-y += min_kdp.o' >> drivers/Makefile
+          fi
+        )
+
+        for path in "${TRANSACTION_PATHS[@]}"; do
+          if [[ -e "$STAGE_DIR/$path" || -L "$STAGE_DIR/$path" ]]; then
+            mkdir -p "$(dirname "$path")"
+            rm -rf "$path"
+            cp -a "$STAGE_DIR/$path" "$path"
+          else
+            rm -rf "$path"
+          fi
+        done
+        TRANSACTION_COMMITTED=true
+
+    - name: Fix WiFi and Bluetooth on Xiaomi 6.6 GKI Devices
+      if: inputs.version == 'android15-6.6'
+      shell: bash
+      working-directory: ${{ github.workspace }}/kernel/common
+      run: |
+        SYMBOL_LIST=android/abi_gki_aarch64_xiaomi
+        echo "device_find_any_child" >> $SYMBOL_LIST
