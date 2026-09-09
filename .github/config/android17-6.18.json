@@ -1,9 +1,0 @@
-{
-  "version": "android17-6.18",
-  "include": [
-    {
-      "sublevel": "X",
-      "date": "lts"
-    }
-  ]
-}
